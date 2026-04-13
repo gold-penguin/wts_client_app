@@ -128,6 +128,7 @@ jobs:
           path: |
             release/*.exe
             release/*.blockmap
+            release/*.yml
 
       - name: Create GitHub Release
         uses: softprops/action-gh-release@v2
@@ -136,4 +137,5 @@ jobs:
           files: |
             release/*.exe
             release/*.blockmap
+            release/*.yml
           generate_release_notes: true

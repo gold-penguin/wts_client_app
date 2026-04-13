@@ -33,12 +33,18 @@
     "nsis": {
       "oneClick": false,
       "allowToChangeInstallationDirectory": true
+    },
+    "publish": {
+      "provider": "github",
+      "owner": "gold-penguin",
+      "repo": "wts_client_app"
     }
   },
   "dependencies": {
     "@tailwindcss/vite": "^4.2.2",
     "axios": "^1.14.0",
     "electron-log": "^5.4.3",
+    "electron-updater": "^6.8.3",
     "react": "^19.2.4",
     "react-dom": "^19.2.4",
     "react-router-dom": "^7.13.2",

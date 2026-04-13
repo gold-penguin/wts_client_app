@@ -1,6 +1,7 @@
-const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, screen, ipcMain } = require('electron');
+const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, screen, ipcMain, dialog } = require('electron');
 const path = require('path');
 const log = require('electron-log/main');
+const { autoUpdater } = require('electron-updater');
 
 // Log configuration
 log.initialize();
@@ -134,6 +135,51 @@ ipcMain.on('log-error', (_e, ...args) => log.error('[Renderer]', ...args));
 ipcMain.on('log-warn', (_e, ...args) => log.warn('[Renderer]', ...args));
 ipcMain.on('log-info', (_e, ...args) => log.info('[Renderer]', ...args));
 
+// ── Auto Updater ──
+function setupAutoUpdater() {
+  autoUpdater.logger = log;
+  autoUpdater.autoDownload = true;
+  autoUpdater.autoInstallOnAppQuit = true;
+
+  autoUpdater.on('checking-for-update', () => {
+    log.info('[Updater] Checking for update...');
+  });
+
+  autoUpdater.on('update-available', (info) => {
+    log.info(`[Updater] Update available: v${info.version}`);
+  });
+
+  autoUpdater.on('update-not-available', () => {
+    log.info('[Updater] App is up to date');
+  });
+
+  autoUpdater.on('download-progress', (progress) => {
+    log.info(`[Updater] Downloading: ${Math.round(progress.percent)}%`);
+  });
+
+  autoUpdater.on('update-downloaded', (info) => {
+    log.info(`[Updater] Update downloaded: v${info.version}`);
+    dialog.showMessageBox(mainWindow, {
+      type: 'info',
+      title: '업데이트 준비 완료',
+      message: `새 버전(v${info.version})이 다운로드되었습니다.\n지금 재시작하시겠습니까?`,
+      buttons: ['지금 재시작', '나중에'],
+      defaultId: 0,
+    }).then(({ response }) => {
+      if (response === 0) {
+        app.isQuitting = true;
+        autoUpdater.quitAndInstall();
+      }
+    });
+  });
+
+  autoUpdater.on('error', (err) => {
+    log.error('[Updater] Error:', err);
+  });
+
+  autoUpdater.checkForUpdates();
+}
+
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.ico'));
 
@@ -189,6 +235,11 @@ app.whenReady().then(() => {
   createWindow();
   createWidget();
   createTray();
+
+  // Check for updates in production
+  if (!isDev) {
+    setupAutoUpdater();
+  }
 
   // Ctrl+Shift+W: toggle main window
   const mainReg = globalShortcut.register('CommandOrControl+Shift+W', () => {
