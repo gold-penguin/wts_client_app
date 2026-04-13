@@ -1,5 +1,15 @@
 const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, screen, ipcMain } = require('electron');
 const path = require('path');
+const log = require('electron-log/main');
+
+// Log configuration
+log.initialize();
+log.transports.file.maxSize = 5 * 1024 * 1024; // 5MB
+log.transports.file.format = '[{y}-{m}-{d} {h}:{i}:{s}] [{level}] {text}';
+log.errorHandler.startCatching();
+
+// Replace console with log
+Object.assign(console, log.functions);
 
 // Windows taskbar pinning support
 app.setAppUserModelId('com.mocomsys.wts');
@@ -92,7 +102,7 @@ function syncAuthToWidget() {
         );
       }
     })
-    .catch((err) => console.error('[Auth sync] error:', err));
+    .catch((err) => log.error('[Auth sync]', err));
 }
 
 function toggleWidget() {
@@ -118,6 +128,11 @@ ipcMain.on('hide-widget', () => {
     widgetWindow.hide();
   }
 });
+
+// IPC: renderer log forwarding
+ipcMain.on('log-error', (_e, ...args) => log.error('[Renderer]', ...args));
+ipcMain.on('log-warn', (_e, ...args) => log.warn('[Renderer]', ...args));
+ipcMain.on('log-info', (_e, ...args) => log.info('[Renderer]', ...args));
 
 function createTray() {
   const icon = nativeImage.createFromPath(path.join(__dirname, 'icon.ico'));
@@ -170,6 +185,7 @@ function createTray() {
 }
 
 app.whenReady().then(() => {
+  log.info(`WTS App started (v${app.getVersion()})`);
   createWindow();
   createWidget();
   createTray();
@@ -205,5 +221,6 @@ app.on('activate', () => {
 });
 
 app.on('will-quit', () => {
+  log.info('WTS App quitting');
   globalShortcut.unregisterAll();
 });
