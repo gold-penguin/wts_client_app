@@ -21,7 +21,7 @@ api.interceptors.request.use((config) => {
 api.interceptors.response.use(
   (res) => res,
   (err) => {
-    const electron = (window as any).wtsElectron;
+    const electron = (window as unknown as { wtsElectron?: { log?: { error: (...args: unknown[]) => void } } }).wtsElectron;
     if (electron?.log) {
       electron.log.error(
         `[API] ${err.config?.method?.toUpperCase()} ${err.config?.url} → ${err.response?.status ?? 'NETWORK_ERROR'}`,
