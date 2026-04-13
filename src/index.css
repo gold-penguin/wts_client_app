@@ -1,0 +1,173 @@
+@import "tailwindcss";
+
+body {
+  margin: 0;
+  font-family: 'Segoe UI', -apple-system, BlinkMacSystemFont, Roboto, sans-serif;
+  -webkit-font-smoothing: antialiased;
+  background-color: #f9fafb;
+  color: #374151;
+  min-height: 100vh;
+}
+
+body.widget-mode {
+  background: transparent !important;
+}
+
+#root {
+  min-height: 100vh;
+}
+
+/* Smooth scrollbar */
+::-webkit-scrollbar {
+  width: 6px;
+  height: 6px;
+}
+::-webkit-scrollbar-track {
+  background: transparent;
+}
+::-webkit-scrollbar-thumb {
+  background: #d1d5db;
+  border-radius: 99px;
+}
+::-webkit-scrollbar-thumb:hover {
+  background: #9ca3af;
+}
+
+/* Responsive table wrapper */
+.table-wrap {
+  overflow-x: auto;
+  -webkit-overflow-scrolling: touch;
+}
+
+/* Input/select consistent sizing */
+input, select, textarea {
+  font-size: 14px;
+  border-radius: 10px !important;
+}
+
+/* Widget styles */
+.widget-container {
+  display: flex;
+  flex-direction: column;
+  height: 100vh;
+  background: rgba(255, 255, 255, 0.97);
+  border-radius: 16px;
+  border: 1px solid #e5e7eb;
+  box-shadow: 0 8px 30px rgba(0, 0, 0, 0.1);
+  overflow: hidden;
+  backdrop-filter: blur(20px);
+}
+
+.widget-header {
+  padding: 10px 12px 8px;
+  border-bottom: 1px solid #f3f4f6;
+  -webkit-app-region: drag;
+  background: #fff;
+}
+
+.widget-header button, .widget-header select {
+  -webkit-app-region: no-drag;
+}
+
+.widget-body {
+  flex: 1;
+  overflow-y: auto;
+  padding: 2px 0;
+}
+
+.widget-body::-webkit-scrollbar {
+  width: 3px;
+}
+.widget-body::-webkit-scrollbar-thumb {
+  background: #e5e7eb;
+  border-radius: 99px;
+}
+
+.widget-footer {
+  padding: 6px 12px;
+  border-top: 1px solid #f3f4f6;
+  display: flex;
+  justify-content: space-between;
+  align-items: center;
+  background: #fafafa;
+}
+
+/* Widget card */
+.widget-card {
+  padding: 8px 10px;
+  margin: 0 2px;
+  border-radius: 10px;
+  background: #fff;
+  border: 1px solid #f3f4f6;
+  transition: all 0.15s ease;
+}
+.widget-card:hover {
+  border-color: #e5e7eb;
+  box-shadow: 0 1px 4px rgba(0, 0, 0, 0.04);
+}
+
+/* Widget buttons */
+.widget-btn-action {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: #fff;
+  font-size: 10px;
+  font-weight: 700;
+  line-height: 1;
+  transition: all 0.15s ease;
+}
+.widget-btn-close {
+  width: 22px;
+  height: 22px;
+  display: flex;
+  align-items: center;
+  justify-content: center;
+  border-radius: 7px;
+  color: #9ca3af;
+  transition: all 0.15s ease;
+}
+.widget-btn-close:hover {
+  background: #f3f4f6;
+  color: #6b7280;
+}
+.widget-btn-primary {
+  padding: 3px 10px;
+  color: #fff;
+  border-radius: 7px;
+  font-size: 11px;
+  font-weight: 600;
+  transition: all 0.15s ease;
+}
+.widget-btn-primary:disabled {
+  opacity: 0.5;
+}
+.widget-btn-text {
+  padding: 3px 8px;
+  font-size: 11px;
+  color: #9ca3af;
+  border-radius: 7px;
+  transition: all 0.15s ease;
+}
+.widget-btn-text:hover {
+  color: #6b7280;
+  background: #f3f4f6;
+}
+
+/* Widget input */
+.widget-input {
+  border: 1px solid #e5e7eb;
+  border-radius: 8px;
+  padding: 5px 8px;
+  font-size: 12px;
+  outline: none;
+  transition: border-color 0.15s ease;
+  background: #fff;
+}
+.widget-input:focus {
+  border-color: #93c5fd;
+  box-shadow: 0 0 0 2px rgba(59, 130, 246, 0.08);
+}
