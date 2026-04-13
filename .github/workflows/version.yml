@@ -16,11 +16,23 @@ jobs:
       bumped: ${{ steps.bump.outputs.bumped }}
 
     steps:
+      - name: Skip if chore commit
+        id: skip
+        run: |
+          MSG=$(cat "$GITHUB_EVENT_PATH" | python3 -c "import sys,json; print(json.load(sys.stdin).get('head_commit',{}).get('message',''))")
+          if echo "$MSG" | grep -qE "^chore:"; then
+            echo "skip=true" >> $GITHUB_OUTPUT
+          else
+            echo "skip=false" >> $GITHUB_OUTPUT
+          fi
+
       - uses: actions/checkout@v4
+        if: steps.skip.outputs.skip != 'true'
         with:
           fetch-depth: 0
 
       - name: Determine version bump
+        if: steps.skip.outputs.skip != 'true'
         id: bump
         run: |
           LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
@@ -63,14 +75,14 @@ jobs:
           echo "Bumping to $NEW_TAG"
 
       - name: Update package.json version
-        if: steps.bump.outputs.bumped == 'true'
+        if: steps.skip.outputs.skip != 'true' && steps.bump.outputs.bumped == 'true'
         run: |
           VERSION=${{ steps.bump.outputs.new_tag }}
           VERSION=${VERSION#v}
-          npm version $VERSION --no-git-tag-version
+          npm version $VERSION --no-git-tag-version --allow-same-version
 
       - name: Commit & Tag
-        if: steps.bump.outputs.bumped == 'true'
+        if: steps.skip.outputs.skip != 'true' && steps.bump.outputs.bumped == 'true'
         run: |
           git config user.name "github-actions[bot]"
           git config user.email "github-actions[bot]@users.noreply.github.com"
