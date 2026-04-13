@@ -1,0 +1,118 @@
+name: Auto Version & Release
+
+on:
+  push:
+    branches:
+      - main
+
+permissions:
+  contents: write
+
+jobs:
+  version:
+    runs-on: ubuntu-latest
+    outputs:
+      new_tag: ${{ steps.bump.outputs.new_tag }}
+      bumped: ${{ steps.bump.outputs.bumped }}
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          fetch-depth: 0
+
+      - name: Determine version bump
+        id: bump
+        run: |
+          LATEST_TAG=$(git describe --tags --abbrev=0 2>/dev/null || echo "v0.0.0")
+          echo "latest_tag=$LATEST_TAG" >> $GITHUB_OUTPUT
+
+          COMMITS=$(git log ${LATEST_TAG}..HEAD --pretty=format:"%s" 2>/dev/null || git log --pretty=format:"%s")
+
+          MAJOR=false
+          MINOR=false
+          PATCH=false
+
+          while IFS= read -r msg; do
+            if echo "$msg" | grep -qi "BREAKING CHANGE"; then
+              MAJOR=true
+            elif echo "$msg" | grep -qE "^feat(\(.*\))?:"; then
+              MINOR=true
+            elif echo "$msg" | grep -qE "^fix(\(.*\))?:"; then
+              PATCH=true
+            fi
+          done <<< "$COMMITS"
+
+          VERSION=${LATEST_TAG#v}
+          IFS='.' read -r major minor patch <<< "$VERSION"
+
+          if [ "$MAJOR" = true ]; then
+            major=$((major + 1)); minor=0; patch=0
+          elif [ "$MINOR" = true ]; then
+            minor=$((minor + 1)); patch=0
+          elif [ "$PATCH" = true ]; then
+            patch=$((patch + 1))
+          else
+            echo "bumped=false" >> $GITHUB_OUTPUT
+            echo "No version bump needed"
+            exit 0
+          fi
+
+          NEW_TAG="v${major}.${minor}.${patch}"
+          echo "new_tag=$NEW_TAG" >> $GITHUB_OUTPUT
+          echo "bumped=true" >> $GITHUB_OUTPUT
+          echo "Bumping to $NEW_TAG"
+
+      - name: Update package.json version
+        if: steps.bump.outputs.bumped == 'true'
+        run: |
+          VERSION=${{ steps.bump.outputs.new_tag }}
+          VERSION=${VERSION#v}
+          npm version $VERSION --no-git-tag-version
+
+      - name: Commit & Tag
+        if: steps.bump.outputs.bumped == 'true'
+        run: |
+          git config user.name "github-actions[bot]"
+          git config user.email "github-actions[bot]@users.noreply.github.com"
+          git add package.json package-lock.json
+          git commit -m "chore: bump version to ${{ steps.bump.outputs.new_tag }}"
+          git tag ${{ steps.bump.outputs.new_tag }}
+          git push origin main --follow-tags
+
+  build:
+    needs: version
+    if: needs.version.outputs.bumped == 'true'
+    runs-on: windows-latest
+
+    steps:
+      - uses: actions/checkout@v4
+        with:
+          ref: main
+
+      - uses: actions/setup-node@v4
+        with:
+          node-version: 20
+          cache: npm
+
+      - name: Install dependencies
+        run: npm ci
+
+      - name: Build & Package
+        run: npm run build:electron
+
+      - name: Upload artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: wts-release-${{ needs.version.outputs.new_tag }}
+          path: |
+            release/*.exe
+            release/*.blockmap
+
+      - name: Create GitHub Release
+        uses: softprops/action-gh-release@v2
+        with:
+          tag_name: ${{ needs.version.outputs.new_tag }}
+          files: |
+            release/*.exe
+            release/*.blockmap
+          generate_release_notes: true
