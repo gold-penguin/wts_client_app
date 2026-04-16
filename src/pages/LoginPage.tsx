@@ -1,9 +1,11 @@
 import { useState } from 'react';
 import { useAuth } from '../hooks/useAuth';
+import { getAutoLogin, setAutoLogin } from '../stores/authStore';
 
 export default function LoginPage() {
   const [userId, setUserId] = useState('');
   const [password, setPassword] = useState('');
+  const [autoLogin, setAutoLoginState] = useState(getAutoLogin);
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
@@ -13,6 +15,11 @@ export default function LoginPage() {
     setError('');
     setLoading(true);
     try {
+      if (autoLogin) {
+        setAutoLogin(true, { user_id: userId, password });
+      } else {
+        setAutoLogin(false);
+      }
       await login(userId, password);
     } catch {
       setError('아이디 또는 비밀번호가 올바르지 않습니다.');
@@ -61,6 +68,16 @@ export default function LoginPage() {
                 required
               />
             </div>
+
+            <label className="flex items-center gap-2 cursor-pointer select-none">
+              <input
+                type="checkbox"
+                checked={autoLogin}
+                onChange={(e) => setAutoLoginState(e.target.checked)}
+                className="w-4 h-4 rounded border-gray-300 text-blue-500 focus:ring-blue-300"
+              />
+              <span className="text-sm text-gray-500">자동 로그인</span>
+            </label>
 
             {error && (
               <p className="text-sm text-red-500 bg-red-50 rounded-lg px-3 py-2">{error}</p>
