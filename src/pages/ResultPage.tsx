@@ -3,7 +3,6 @@ import { resultApi } from '../api/result';
 import { jobApi } from '../api/job';
 import { commonApi } from '../api/common';
 import { customerApi } from '../api/customer';
-import { aiApi } from '../api/ai';
 import { getUser } from '../stores/authStore';
 
 interface ResultItem {
@@ -90,29 +89,6 @@ export default function ResultPage() {
     note: '',
     is_outing: false,
   });
-
-  // AI natural language input
-  const [aiText, setAiText] = useState('');
-  const [aiParsing, setAiParsing] = useState(false);
-  const [showAiInput, setShowAiInput] = useState(false);
-  const [showApiKeyInput, setShowApiKeyInput] = useState(false);
-  const [apiKeyDraft, setApiKeyDraft] = useState('');
-
-  const handleOpenAiInput = () => {
-    if (!aiApi.hasApiKey()) {
-      setShowApiKeyInput(true);
-    } else {
-      setShowAiInput(v => !v);
-    }
-  };
-
-  const handleSaveApiKey = () => {
-    if (!apiKeyDraft.trim()) return;
-    aiApi.setApiKey(apiKeyDraft.trim());
-    setShowApiKeyInput(false);
-    setApiKeyDraft('');
-    setShowAiInput(true);
-  };
 
   // Job creation inline
   const [showJobForm, setShowJobForm] = useState(false);
@@ -270,50 +246,6 @@ export default function ResultPage() {
     }
   };
 
-  const handleAiParse = async () => {
-    if (!aiText.trim()) return;
-    setAiParsing(true);
-    try {
-      const [jobRes, typeRes, methodRes] = await Promise.all([
-        jobApi.list({ emp_uid: user.emp_uid }), commonApi.jobTypes(), commonApi.jobMethods(),
-      ]);
-      const currentJobs = jobRes.data.data || jobRes.data || [];
-      const currentTypes = typeRes.data.data || typeRes.data || [];
-      const currentMethods = methodRes.data.data || methodRes.data || [];
-      setJobs(currentJobs); setJobTypes(currentTypes); setJobMethods(currentMethods);
-
-      const res = await aiApi.parseWork({
-        text: aiText.trim(), jobs: currentJobs, job_types: currentTypes, job_methods: currentMethods,
-      });
-      const parsed = res.data;
-
-      let startTime = form.start_time;
-      try {
-        const lastRes = await resultApi.lastEndTime(user.emp_uid, selectedDate);
-        if (lastRes.data?.last_end_time) startTime = lastRes.data.last_end_time;
-      } catch { /* use default */ }
-
-      const hours = parsed.hours || 1;
-      const outingMethodUid = currentMethods.find((m: { JOB_METHOD: string }) => m.JOB_METHOD === '외근')?.JOB_METHOD_UID;
-      setForm(f => ({
-        ...f,
-        job_uid: parsed.job_uid || f.job_uid,
-        job_type_uid: parsed.job_type_uid || f.job_type_uid,
-        job_method_uid: parsed.job_method_uid || f.job_method_uid,
-        hours, start_time: startTime, end_time: calcEndTime(startTime, hours),
-        note: parsed.note || f.note,
-        is_outing: parsed.job_method_uid === outingMethodUid,
-      }));
-      setShowAiInput(false); setShowForm(true); setEditMode(false); setEditUid(null); setAiText('');
-    } catch (err) {
-      console.error(err);
-      const msg = err instanceof Error ? err.message : '알 수 없는 오류';
-      alert(`AI 분석 실패: ${msg}`);
-    } finally {
-      setAiParsing(false);
-    }
-  };
-
   const handleHoursChange = (hours: number) => {
     const endTime = calcEndTime(form.start_time, hours);
     setForm(f => ({ ...f, hours, end_time: endTime }));
@@ -437,36 +369,9 @@ export default function ResultPage() {
         </div>
         <div className="flex items-center gap-2">
           <span className="text-sm text-gray-400">합계: <strong className="text-gray-700">{totalHours}h</strong></span>
-          <button onClick={handleOpenAiInput} className="px-3 py-1.5 border border-purple-200 text-purple-500 rounded-lg text-sm font-medium hover:bg-purple-50 shrink-0 transition-colors">AI 입력</button>
           <button onClick={handleNew} className="px-3 py-1.5 bg-blue-500 text-white rounded-lg text-sm font-medium hover:bg-blue-600 shrink-0 transition-colors">+ 실적 등록</button>
         </div>
       </div>
-
-      {/* API Key input */}
-      {showApiKeyInput && (
-        <div className="bg-yellow-50 rounded-lg border border-yellow-200 p-4 mb-4">
-          <h3 className="text-sm font-semibold text-yellow-800 mb-2">Google Gemini API 키 설정</h3>
-          <p className="text-xs text-yellow-600 mb-3">AI 기능을 사용하려면 Gemini API 키가 필요합니다. <a href="https://aistudio.google.com/apikey" target="_blank" rel="noopener noreferrer" className="underline font-medium">Google AI Studio</a>에서 무료로 발급받을 수 있습니다.</p>
-          <div className="flex gap-2">
-            <input type="password" value={apiKeyDraft} onChange={e => setApiKeyDraft(e.target.value)} placeholder="AIza..." className="flex-1 border border-yellow-200 rounded px-3 py-1.5 text-sm" autoFocus onKeyDown={e => { if (e.key === 'Enter') handleSaveApiKey(); }} />
-            <button onClick={() => setShowApiKeyInput(false)} className="px-3 py-1.5 border rounded text-sm text-gray-600 hover:bg-gray-50">취소</button>
-            <button onClick={handleSaveApiKey} disabled={!apiKeyDraft.trim()} className="px-4 py-1.5 bg-yellow-600 text-white rounded text-sm hover:bg-yellow-700 disabled:opacity-50">저장</button>
-          </div>
-        </div>
-      )}
-
-      {/* AI natural language input */}
-      {showAiInput && !showForm && (
-        <div className="bg-purple-50 rounded-lg border border-purple-200 p-4 mb-4">
-          <h3 className="text-sm font-semibold text-purple-800 mb-2">AI 업무 입력</h3>
-          <p className="text-xs text-purple-600 mb-3">자연어로 업무를 입력하면 자동으로 분석하여 폼을 채워드립니다.</p>
-          <textarea value={aiText} onChange={e => setAiText(e.target.value)} placeholder={"예: WTS 프로젝트 프론트엔드 개발 3시간, 현장 방문\n예: 모컴시스 서버 유지보수 2시간 원격으로 진행"} className="w-full border border-purple-200 rounded px-3 py-2 text-sm resize-none" rows={3} autoFocus onKeyDown={e => { if (e.key === 'Enter' && !e.shiftKey) { e.preventDefault(); handleAiParse(); } }} />
-          <div className="flex justify-end gap-2 mt-2">
-            <button onClick={() => { setShowAiInput(false); setAiText(''); }} className="px-3 py-1.5 border rounded text-sm text-gray-600 hover:bg-gray-50">취소</button>
-            <button onClick={handleAiParse} disabled={aiParsing || !aiText.trim()} className="px-4 py-1.5 bg-purple-600 text-white rounded text-sm hover:bg-purple-700 disabled:opacity-50">{aiParsing ? '분석 중...' : '분석하기'}</button>
-          </div>
-        </div>
-      )}
 
       {/* Results list */}
       {loading ? (
