@@ -135,7 +135,27 @@ ipcMain.on('log-error', (_e, ...args) => log.error('[Renderer]', ...args));
 ipcMain.on('log-warn', (_e, ...args) => log.warn('[Renderer]', ...args));
 ipcMain.on('log-info', (_e, ...args) => log.info('[Renderer]', ...args));
 
+// IPC: updater
+ipcMain.on('updater:check', () => triggerManualUpdateCheck());
+ipcMain.on('updater:install', () => {
+  app.isQuitting = true;
+  autoUpdater.quitAndInstall();
+});
+ipcMain.handle('updater:get-status', () => updaterLastStatus);
+ipcMain.handle('app:get-version', () => app.getVersion());
+
 // ── Auto Updater ──
+let updaterManualCheck = false;
+let updaterLastStatus = { type: 'idle' };
+
+function broadcastUpdaterStatus(payload) {
+  updaterLastStatus = payload;
+  const targets = [mainWindow, widgetWindow].filter(w => w && !w.isDestroyed());
+  for (const w of targets) {
+    w.webContents.send('updater:status', payload);
+  }
+}
+
 function setupAutoUpdater() {
   autoUpdater.logger = log;
   autoUpdater.autoDownload = true;
@@ -143,22 +163,37 @@ function setupAutoUpdater() {
 
   autoUpdater.on('checking-for-update', () => {
     log.info('[Updater] Checking for update...');
+    broadcastUpdaterStatus({ type: 'checking' });
   });
 
   autoUpdater.on('update-available', (info) => {
     log.info(`[Updater] Update available: v${info.version}`);
+    broadcastUpdaterStatus({ type: 'available', version: info.version });
   });
 
-  autoUpdater.on('update-not-available', () => {
+  autoUpdater.on('update-not-available', (info) => {
     log.info('[Updater] App is up to date');
+    broadcastUpdaterStatus({ type: 'up-to-date', version: info?.version });
+    if (updaterManualCheck && mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: '업데이트 확인',
+        message: `현재 최신 버전입니다 (v${app.getVersion()}).`,
+        buttons: ['확인'],
+      });
+    }
+    updaterManualCheck = false;
   });
 
   autoUpdater.on('download-progress', (progress) => {
     log.info(`[Updater] Downloading: ${Math.round(progress.percent)}%`);
+    broadcastUpdaterStatus({ type: 'downloading', percent: progress.percent });
   });
 
   autoUpdater.on('update-downloaded', (info) => {
     log.info(`[Updater] Update downloaded: v${info.version}`);
+    broadcastUpdaterStatus({ type: 'downloaded', version: info.version });
+    updaterManualCheck = false;
     dialog.showMessageBox(mainWindow, {
       type: 'info',
       title: '업데이트 준비 완료',
@@ -175,8 +210,34 @@ function setupAutoUpdater() {
 
   autoUpdater.on('error', (err) => {
     log.error('[Updater] Error:', err);
+    broadcastUpdaterStatus({ type: 'error', message: err?.message || String(err) });
+    if (updaterManualCheck && mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'error',
+        title: '업데이트 확인 실패',
+        message: `업데이트를 확인하는 중 오류가 발생했습니다.\n${err?.message || err}`,
+        buttons: ['확인'],
+      });
+    }
+    updaterManualCheck = false;
   });
 
+  autoUpdater.checkForUpdates();
+}
+
+function triggerManualUpdateCheck() {
+  if (isDev) {
+    if (mainWindow && !mainWindow.isDestroyed()) {
+      dialog.showMessageBox(mainWindow, {
+        type: 'info',
+        title: '업데이트 확인',
+        message: '개발 환경에서는 자동 업데이트가 비활성화되어 있습니다.',
+        buttons: ['확인'],
+      });
+    }
+    return;
+  }
+  updaterManualCheck = true;
   autoUpdater.checkForUpdates();
 }
 
@@ -209,6 +270,11 @@ function createTray() {
           mainWindow.setAlwaysOnTop(menuItem.checked);
         }
       },
+    },
+    { type: 'separator' },
+    {
+      label: '업데이트 확인',
+      click: () => triggerManualUpdateCheck(),
     },
     { type: 'separator' },
     {

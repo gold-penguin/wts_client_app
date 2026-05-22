@@ -1,6 +1,7 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { getUser, clearUser } from '../stores/authStore';
+import UpdateStatus from '../components/UpdateStatus';
 
 const navItems = [
   { to: '/', label: '실적 입력', icon: '✏️' },
@@ -63,6 +64,7 @@ export default function MainLayout() {
           </div>
 
           <div className="flex items-center gap-2 shrink-0">
+            <UpdateStatus />
             {user && (
               <>
                 <span className="text-xs sm:text-sm text-gray-400 hidden sm:inline truncate max-w-[180px]">
