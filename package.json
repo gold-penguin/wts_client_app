@@ -34,7 +34,11 @@
     },
     "nsis": {
       "oneClick": false,
-      "allowToChangeInstallationDirectory": true
+      "allowToChangeInstallationDirectory": true,
+      "artifactName": "wts-client-setup-${version}.${ext}"
+    },
+    "portable": {
+      "artifactName": "wts-client-portable-${version}.${ext}"
     },
     "publish": {
       "provider": "github",
