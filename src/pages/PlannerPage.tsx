@@ -5,6 +5,7 @@ import {
   toYmd, fromYmd, ymdToInput, inputToYmd, byTime, isDueBy,
 } from '../stores/plannerStore';
 import NaverSyncBar from '../components/NaverSyncBar';
+import { getUploadDefault, setUploadDefault, isNaverLinked, useNaverSyncState } from '../stores/naverSync';
 import type { PlannerItem, PlannerKind, PlannerFields } from '../types/planner';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -18,6 +19,8 @@ interface FormState {
   start_time: string;
   end_time: string;
   note: string;
+  /** 일정을 네이버 캘린더에 올릴지 */
+  upload: boolean;
 }
 
 const emptyForm = (kind: PlannerKind, ymd?: string): FormState => ({
@@ -29,6 +32,7 @@ const emptyForm = (kind: PlannerKind, ymd?: string): FormState => ({
   start_time: '09:00',
   end_time: '10:00',
   note: '',
+  upload: getUploadDefault(),
 });
 
 const formFromItem = (item: PlannerItem): FormState => ({
@@ -40,6 +44,7 @@ const formFromItem = (item: PlannerItem): FormState => ({
   start_time: item.start_time || '09:00',
   end_time: item.end_time || '10:00',
   note: item.note || '',
+  upload: !item.local_only,
 });
 
 const dateLabel = (ymd: string) => {
@@ -58,6 +63,7 @@ const MAX_SPAN_DAYS = 62;
 
 export default function PlannerPage() {
   const user = getUser()!;
+  const naverLinked = isNaverLinked(useNaverSyncState(), user.emp_uid);
   const items = usePlannerItems(user.emp_uid);
   const today = toYmd(new Date());
 
@@ -161,7 +167,9 @@ export default function PlannerPage() {
       end_date: endDate,
       start_time: isTimed ? form.start_time : undefined,
       end_time: isTimed ? form.end_time : undefined,
+      local_only: isEvent && !form.upload ? true : undefined,
     };
+    if (isEvent && naverLinked && !readonly) setUploadDefault(form.upload);
     if (editingId) {
       updateItem(user.emp_uid, editingId, draft);
     } else {
@@ -385,6 +393,19 @@ export default function PlannerPage() {
                     </label>
                   )}
                 </div>
+                {form.kind === 'event' && naverLinked && !readonly && (
+                  <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
+                    <input
+                      type="checkbox"
+                      checked={form.upload}
+                      onChange={e => setForm(f => f && { ...f, upload: e.target.checked })}
+                      className="w-3.5 h-3.5"
+                    />
+                    <span className="inline-block px-1 rounded bg-green-500 text-white text-[9px] font-black">N</span>
+                    네이버 캘린더에 올리기
+                    {editingItem?.external_id && !form.upload && <span className="text-orange-500">(네이버에서는 지워져요)</span>}
+                  </label>
+                )}
                 {form.kind === 'event' && !form.allDay && (
                   <div className="flex items-center gap-1.5">
                     <input type="time" value={form.start_time} onChange={e => setForm(f => f && { ...f, start_time: e.target.value })} className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white" />

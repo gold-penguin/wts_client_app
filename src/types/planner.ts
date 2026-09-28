@@ -29,9 +29,11 @@ export interface PlannerItem {
   synced_rev?: number;
   /** 네이버 반복 일정 회차 — 앱에서 수정·삭제 불가 */
   readonly?: boolean;
+  /** 네이버 캘린더에 올리지 않고 이 PC에만 두는 일정 */
+  local_only?: boolean;
 }
 
 export type PlannerDraft = Omit<PlannerItem, 'id' | 'created_at' | 'updated_at' | 'rev'>;
 
 /** 편집 가능한 필드 (동기화 메타 제외) */
-export type PlannerFields = Pick<PlannerItem, 'kind' | 'title' | 'note' | 'date' | 'end_date' | 'start_time' | 'end_time' | 'done'>;
+export type PlannerFields = Pick<PlannerItem, 'kind' | 'title' | 'note' | 'date' | 'end_date' | 'start_time' | 'end_time' | 'done' | 'local_only'>;

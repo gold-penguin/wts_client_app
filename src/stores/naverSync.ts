@@ -89,15 +89,31 @@ function markPushed(empUid: number, id: string, sentRev: number, meta: Partial<P
   }));
 }
 
-/** 할 일로 바뀐 동기화 일정 → 원격에서는 지우고 로컬 연결 정보 제거 */
+/** 할 일로 바뀌었거나 '네이버에 올리지 않음'으로 바뀐 동기화 일정 → 원격에서는 지우고 로컬 연결 정보 제거 */
 function unlink(empUid: number, id: string) {
   replaceItems(empUid, loadItems(empUid).map(i =>
     i.id === id ? { ...i, external_id: undefined, external_hash: undefined, synced_rev: undefined, readonly: undefined } : i,
   ));
 }
 
+const shouldUnlink = (i: PlannerItem) => !!i.external_id && (i.kind === 'todo' || !!i.local_only);
+
 const needsPush = (i: PlannerItem) =>
-  (i.kind === 'event' && !i.readonly && !!i.date && isDirty(i)) || (i.kind === 'todo' && !!i.external_id);
+  (i.kind === 'event' && !i.readonly && !i.local_only && !!i.date && isDirty(i)) || shouldUnlink(i);
+
+// 새 일정을 네이버에 올릴지 기본값 (마지막 선택을 기억, 이 PC 편의 설정)
+const UPLOAD_DEFAULT_KEY = 'wts_naver_upload_default';
+
+export function getUploadDefault(): boolean {
+  try { return localStorage.getItem(UPLOAD_DEFAULT_KEY) !== 'false'; } catch { return true; }
+}
+
+export function setUploadDefault(upload: boolean) {
+  try { localStorage.setItem(UPLOAD_DEFAULT_KEY, String(upload)); } catch { /* 편의 설정일 뿐 */ }
+}
+
+/** 이 사용자에게 네이버 동기화가 켜져 있는지 (체크박스 표시 여부) */
+export const isNaverLinked = (s: NaverSyncState, empUid: number) => !!s.status?.connected && s.status.empUid === empUid;
 
 export function hasPendingChanges(empUid: number) {
   return loadDeleted(empUid).length > 0 || loadItems(empUid).some(needsPush);
@@ -109,7 +125,7 @@ async function push(empUid: number) {
   if (deleted.length) clearDeleted(empUid, deleted);
 
   for (const item of loadItems(empUid).filter(needsPush)) {
-    if (item.kind === 'todo') {
+    if (shouldUnlink(item)) {
       if (!item.readonly) await naverApi.deleteEvent(item.external_id!);
       unlink(empUid, item.id);
       continue;
