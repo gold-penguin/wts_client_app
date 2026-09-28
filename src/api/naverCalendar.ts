@@ -1,22 +1,24 @@
 // 네이버 캘린더(CalDAV) — Electron 메인 프로세스(electron/naverCalendar.cjs)를 IPC로 호출
 import type { PlannerItem } from '../types/planner';
 
+export interface NaverCalendar {
+  url: string;
+  name: string;
+  /** 네이버에 설정된 캘린더 색 (#rrggbb), 없으면 null */
+  color: string | null;
+}
+
 export interface NaverStatus {
   available: boolean;
   connected: boolean;
   username: string | null;
-  calendarUrl: string | null;
-  calendarName: string | null;
+  /** 동기화하도록 선택한 캘린더들 */
+  calendars: NaverCalendar[];
   empUid: number | null;
 }
 
-export interface NaverCalendar {
-  url: string;
-  name: string;
-}
-
 /** 원격 일정 1건(반복 일정은 회차별로 펼쳐짐) */
-export type RemoteEvent = Required<Pick<PlannerItem, 'external_id' | 'external_hash' | 'title' | 'date'>> &
+export type RemoteEvent = Required<Pick<PlannerItem, 'external_id' | 'external_hash' | 'title' | 'date' | 'calendar_url'>> &
   Pick<PlannerItem, 'note' | 'end_date' | 'start_time' | 'end_time' | 'readonly'>;
 
 export type EventFields = Pick<PlannerItem, 'title' | 'note' | 'date' | 'end_date' | 'start_time' | 'end_time'>;
@@ -27,10 +29,10 @@ interface NaverBridge {
   status: () => Promise<Result<NaverStatus>>;
   connect: (creds: { username: string; password: string }) => Promise<Result<NaverCalendar[]>>;
   listCalendars: () => Promise<Result<NaverCalendar[]>>;
-  selectCalendar: (arg: { url: string; name: string; empUid: number }) => Promise<Result<void>>;
+  selectCalendars: (arg: { calendars: NaverCalendar[]; empUid: number }) => Promise<Result<void>>;
   disconnect: () => Promise<Result<void>>;
   fetchEvents: (range: { start: string; end: string }) => Promise<Result<RemoteEvent[]>>;
-  createEvent: (fields: EventFields) => Promise<Result<{ external_id: string; external_hash: string | null }>>;
+  createEvent: (arg: { fields: EventFields; calendarUrl: string }) => Promise<Result<{ external_id: string; external_hash: string | null }>>;
   updateEvent: (arg: { href: string; fields: EventFields }) => Promise<Result<{ deleted: boolean; external_hash?: string | null }>>;
   deleteEvent: (arg: { href: string }) => Promise<Result<void>>;
 }
@@ -53,10 +55,10 @@ export const naverApi = {
   status: () => call(b => b.status()),
   connect: (username: string, password: string) => call(b => b.connect({ username, password })),
   listCalendars: () => call(b => b.listCalendars()),
-  selectCalendar: (url: string, name: string, empUid: number) => call(b => b.selectCalendar({ url, name, empUid })),
+  selectCalendars: (calendars: NaverCalendar[], empUid: number) => call(b => b.selectCalendars({ calendars, empUid })),
   disconnect: () => call(b => b.disconnect()),
   fetchEvents: (start: Date, end: Date) => call(b => b.fetchEvents({ start: start.toISOString(), end: end.toISOString() })),
-  createEvent: (fields: EventFields) => call(b => b.createEvent(fields)),
+  createEvent: (fields: EventFields, calendarUrl: string) => call(b => b.createEvent({ fields, calendarUrl })),
   updateEvent: (href: string, fields: EventFields) => call(b => b.updateEvent({ href, fields })),
   deleteEvent: (href: string) => call(b => b.deleteEvent({ href })),
 };

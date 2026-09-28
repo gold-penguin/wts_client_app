@@ -1,7 +1,9 @@
 import { useEffect, useState } from 'react';
 import { addItem, deleteItem, toggleDone, toYmd, fromYmd, byTime, isDueBy, occursOn } from '../stores/plannerStore';
 import type { PlannerItem, PlannerKind } from '../types/planner';
-import { getUploadDefault, setUploadDefault, isNaverLinked, useNaverSyncState, refreshNaverStatus } from '../stores/naverSync';
+import {
+  calendarColor, calendarOf, getUploadTarget, isNaverLinked, refreshNaverStatus, setUploadTarget, useNaverSyncState,
+} from '../stores/naverSync';
 
 interface Props {
   empUid: number;
@@ -33,8 +35,12 @@ export default function WidgetPlanner({ empUid, items }: Props) {
   const [kind, setKind] = useState<PlannerKind>(loadKind);
   const [allDay, setAllDay] = useState(false);
   const [slot, setSlot] = useState(nextHourSlot);
-  const [upload, setUpload] = useState(getUploadDefault);
-  const naverLinked = isNaverLinked(useNaverSyncState(), empUid);
+  const syncState = useNaverSyncState();
+  const naverLinked = isNaverLinked(syncState, empUid);
+  const calendars = naverLinked ? syncState.status?.calendars ?? [] : [];
+  // 사용자가 고르기 전엔 기본값(마지막 선택)을 따른다 — 캘린더 목록이 늦게 와도 맞게 보이도록
+  const [targetChoice, setTargetChoice] = useState<string | null>(null);
+  const target = targetChoice ?? getUploadTarget(calendars);
   // 위젯 창은 동기화를 돌리지 않으므로 연동 여부만 따로 조회
   useEffect(() => { refreshNaverStatus(); }, []);
   const today = toYmd(new Date());
@@ -63,9 +69,10 @@ export default function WidgetPlanner({ empUid, items }: Props) {
         date: today,
         start_time: allDay ? undefined : slot.start,
         end_time: allDay ? undefined : slot.end,
-        local_only: naverLinked && !upload ? true : undefined,
+        local_only: naverLinked && !target ? true : undefined,
+        calendar_url: naverLinked && target ? target : undefined,
       });
-      if (naverLinked) setUploadDefault(upload);
+      if (naverLinked) setUploadTarget(target);
     } else {
       addItem(empUid, { kind: 'todo', title: t, date: today, done: false });
     }
@@ -86,7 +93,14 @@ export default function WidgetPlanner({ empUid, items }: Props) {
       )}
       <div className="min-w-0 flex-1">
         <div className={`text-xs font-semibold truncate leading-snug ${item.done ? 'line-through text-gray-400' : 'text-gray-800'}`}>
-          {item.external_id && <span className="inline-block mr-1 px-1 rounded bg-green-500 text-white text-[9px] font-black align-middle">N</span>}
+          {item.external_id && (
+            <span
+              className="inline-block mr-1 px-1 rounded bg-green-500 text-white text-[9px] font-black align-middle"
+              style={calendarColor(calendars, calendarOf(calendars, item.external_id)?.url) ? { backgroundColor: calendarColor(calendars, calendarOf(calendars, item.external_id)?.url) } : undefined}
+            >
+              N
+            </span>
+          )}
           {item.title}
         </div>
         {item.kind === 'event' && (
@@ -162,11 +176,18 @@ export default function WidgetPlanner({ empUid, items }: Props) {
           </div>
         )}
         {kind === 'event' && naverLinked && (
-          <label className="flex items-center gap-1 text-[11px] text-gray-500 cursor-pointer select-none px-0.5">
-            <input type="checkbox" checked={upload} onChange={e => setUpload(e.target.checked)} className="w-3 h-3" />
-            <span className="inline-block px-1 rounded bg-green-500 text-white text-[9px] font-black">N</span>
-            네이버 캘린더에 올리기
-          </label>
+          <div className="flex items-center gap-1 px-0.5">
+            <span
+              className="inline-block px-1 rounded bg-green-500 text-white text-[9px] font-black shrink-0"
+              style={target ? { backgroundColor: calendarColor(calendars, target) } : undefined}
+            >
+              N
+            </span>
+            <select value={target} onChange={e => setTargetChoice(e.target.value)} className="widget-input flex-1 min-w-0">
+              <option value="">네이버에 올리지 않음</option>
+              {calendars.map(c => <option key={c.url} value={c.url}>{c.name}</option>)}
+            </select>
+          </div>
         )}
       </form>
       {events.length === 0 && todos.length === 0 && doneToday.length === 0 ? (

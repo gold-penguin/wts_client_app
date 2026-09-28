@@ -22,11 +22,19 @@ const configPath = () => path.join(app.getPath('userData'), 'naver-calendar.json
 // ── Config ──
 
 function readConfig() {
+  let config;
   try {
-    return JSON.parse(fs.readFileSync(configPath(), 'utf-8'));
+    config = JSON.parse(fs.readFileSync(configPath(), 'utf-8'));
   } catch {
     return null;
   }
+  // v0.6 stored one calendar as calendarUrl/calendarName
+  if (!Array.isArray(config.calendars)) {
+    config.calendars = config.calendarUrl ? [{ url: config.calendarUrl, name: config.calendarName || '', color: null }] : [];
+  }
+  delete config.calendarUrl;
+  delete config.calendarName;
+  return config;
 }
 
 function writeConfig(config) {
@@ -70,13 +78,28 @@ async function discover(headers) {
   };
 }
 
+/** Apple calendar-color comes as "#RRGGBB" or "#RRGGBBAA" (sometimes wrapped in an object) */
+function normalizeColor(value) {
+  const raw = typeof value === 'string' ? value : value?._text ?? value?._cdata ?? null;
+  const m = typeof raw === 'string' && /#[0-9a-f]{6}/i.exec(raw);
+  return m ? m[0].toLowerCase() : null;
+}
+
+const withSlash = (url) => (url.endsWith('/') ? url : `${url}/`);
+
+function requireCalendar(config, calendarUrl) {
+  const cal = config.calendars.find((c) => c.url === calendarUrl);
+  if (!cal) throw new Error('동기화하도록 선택한 캘린더가 아닙니다.');
+  return cal;
+}
+
 async function listCalendarsWith(username, password) {
   const headers = authHeaders(username, password);
   const account = await discover(headers);
   const calendars = await tsdav.fetchCalendars({ account, headers });
   return calendars
     .filter((c) => !c.components?.length || c.components.includes('VEVENT'))
-    .map((c) => ({ url: c.url, name: String(c.displayName || '(이름 없음)') }));
+    .map((c) => ({ url: c.url, name: String(c.displayName || '(이름 없음)'), color: normalizeColor(c.calendarColor) }));
 }
 
 // ── Object I/O ──
@@ -107,10 +130,9 @@ async function status() {
   const config = readConfig();
   return {
     available: safeStorage.isEncryptionAvailable(),
-    connected: !!(config?.username && config?.password && config?.calendarUrl),
+    connected: !!(config?.username && config?.password && config?.calendars.length),
     username: config?.username || null,
-    calendarUrl: config?.calendarUrl || null,
-    calendarName: config?.calendarName || null,
+    calendars: config?.calendars || [],
     empUid: config?.empUid ?? null,
   };
 }
@@ -123,8 +145,7 @@ async function connect({ username, password }) {
   writeConfig({
     username,
     password: safeStorage.encryptString(password).toString('base64'),
-    calendarUrl: prev?.username === username ? prev.calendarUrl : null,
-    calendarName: prev?.username === username ? prev.calendarName : null,
+    calendars: prev?.username === username ? prev.calendars : [],
     empUid: prev?.empUid ?? null,
   });
   log.info(`[Naver] Connected as ${username} (${calendars.length} calendars)`);
@@ -136,11 +157,11 @@ async function listCalendars() {
   return listCalendarsWith(username, password);
 }
 
-async function selectCalendar({ url, name, empUid }) {
+async function selectCalendars({ calendars, empUid }) {
   const config = readConfig();
   if (!config) throw new Error('네이버 캘린더가 연결되어 있지 않습니다.');
-  writeConfig({ ...config, calendarUrl: url, calendarName: name, empUid });
-  log.info(`[Naver] Calendar selected: ${name}`);
+  writeConfig({ ...config, calendars, empUid });
+  log.info(`[Naver] Calendars selected: ${calendars.map((c) => c.name).join(', ')}`);
 }
 
 async function disconnect() {
@@ -152,34 +173,36 @@ async function disconnect() {
 
 async function fetchEvents({ start, end }) {
   const { config, username, password } = getCredentials();
-  if (!config.calendarUrl) throw new Error('동기화할 캘린더를 선택하세요.');
+  if (!config.calendars.length) throw new Error('동기화할 캘린더를 선택하세요.');
   const headers = authHeaders(username, password);
-  const objects = await tsdav.fetchCalendarObjects({
-    calendar: { url: config.calendarUrl },
-    headers,
-    timeRange: { start, end },
-  });
   const rangeStart = new Date(start);
   const rangeEnd = new Date(end);
   const events = [];
-  for (const obj of objects) {
-    if (!obj.data || !/BEGIN:VEVENT/i.test(obj.data)) continue;
-    try {
-      events.push(...parseObject(obj, rangeStart, rangeEnd));
-    } catch (err) {
-      log.warn(`[Naver] Skipping unparsable object ${obj.url}:`, err?.message);
+  // Fail the whole fetch if any calendar fails, so the renderer never mistakes a missing calendar for deletions
+  for (const cal of config.calendars) {
+    const objects = await tsdav.fetchCalendarObjects({ calendar: { url: cal.url }, headers, timeRange: { start, end } });
+    let count = 0;
+    for (const obj of objects) {
+      if (!obj.data || !/BEGIN:VEVENT/i.test(obj.data)) continue;
+      try {
+        const parsed = parseObject(obj, rangeStart, rangeEnd).map((e) => ({ ...e, calendar_url: cal.url }));
+        events.push(...parsed);
+        count += parsed.length;
+      } catch (err) {
+        log.warn(`[Naver] Skipping unparsable object ${obj.url}:`, err?.message);
+      }
     }
+    log.info(`[Naver] Fetched ${cal.name}: ${objects.length} objects -> ${count} events`);
   }
-  log.info(`[Naver] Fetched ${objects.length} objects -> ${events.length} events`);
   return events;
 }
 
-async function createEvent(fields) {
+async function createEvent({ fields, calendarUrl }) {
   const { config, username, password } = getCredentials();
-  if (!config.calendarUrl) throw new Error('동기화할 캘린더를 선택하세요.');
+  const cal = requireCalendar(config, calendarUrl);
   const headers = authHeaders(username, password);
   const uid = `wts-${crypto.randomUUID()}`;
-  const url = new URL(`${uid}.ics`, config.calendarUrl.endsWith('/') ? config.calendarUrl : `${config.calendarUrl}/`).href;
+  const url = new URL(`${uid}.ics`, withSlash(cal.url)).href;
   await putObject(url, headers, newIcs(uid, fields), { create: true });
   const stored = await getObject(url, headers);
   log.info(`[Naver] Created ${url}`);
@@ -213,7 +236,7 @@ async function deleteEvent({ href }) {
 }
 
 function registerNaverIpc(ipcMain) {
-  const handlers = { status, connect, listCalendars, selectCalendar, disconnect, fetchEvents, createEvent, updateEvent, deleteEvent };
+  const handlers = { status, connect, listCalendars, selectCalendars, disconnect, fetchEvents, createEvent, updateEvent, deleteEvent };
   for (const [name, fn] of Object.entries(handlers)) {
     ipcMain.handle(`naver:${name}`, async (_e, arg) => {
       try {

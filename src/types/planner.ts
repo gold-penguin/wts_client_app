@@ -31,9 +31,11 @@ export interface PlannerItem {
   readonly?: boolean;
   /** 네이버 캘린더에 올리지 않고 이 PC에만 두는 일정 */
   local_only?: boolean;
+  /** 올릴(또는 올라가 있는) 네이버 캘린더 URL */
+  calendar_url?: string;
 }
 
 export type PlannerDraft = Omit<PlannerItem, 'id' | 'created_at' | 'updated_at' | 'rev'>;
 
 /** 편집 가능한 필드 (동기화 메타 제외) */
-export type PlannerFields = Pick<PlannerItem, 'kind' | 'title' | 'note' | 'date' | 'end_date' | 'start_time' | 'end_time' | 'done' | 'local_only'>;
+export type PlannerFields = Pick<PlannerItem, 'kind' | 'title' | 'note' | 'date' | 'end_date' | 'start_time' | 'end_time' | 'done' | 'local_only' | 'calendar_url'>;

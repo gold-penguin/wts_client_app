@@ -5,7 +5,9 @@ import {
   toYmd, fromYmd, ymdToInput, inputToYmd, byTime, isDueBy,
 } from '../stores/plannerStore';
 import NaverSyncBar from '../components/NaverSyncBar';
-import { getUploadDefault, setUploadDefault, isNaverLinked, useNaverSyncState } from '../stores/naverSync';
+import {
+  calendarColor, calendarOf, getUploadTarget, isNaverLinked, setUploadTarget, uploadTargetOf, useNaverSyncState,
+} from '../stores/naverSync';
 import type { PlannerItem, PlannerKind, PlannerFields } from '../types/planner';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
@@ -19,11 +21,11 @@ interface FormState {
   start_time: string;
   end_time: string;
   note: string;
-  /** 일정을 네이버 캘린더에 올릴지 */
-  upload: boolean;
+  /** 올릴 네이버 캘린더 URL ('' = 올리지 않음) */
+  target: string;
 }
 
-const emptyForm = (kind: PlannerKind, ymd?: string): FormState => ({
+const emptyForm = (kind: PlannerKind, ymd: string | undefined, target: string): FormState => ({
   kind,
   title: '',
   date: ymdToInput(ymd),
@@ -32,10 +34,10 @@ const emptyForm = (kind: PlannerKind, ymd?: string): FormState => ({
   start_time: '09:00',
   end_time: '10:00',
   note: '',
-  upload: getUploadDefault(),
+  target,
 });
 
-const formFromItem = (item: PlannerItem): FormState => ({
+const formFromItem = (item: PlannerItem, target: string): FormState => ({
   kind: item.kind,
   title: item.title,
   date: ymdToInput(item.date),
@@ -44,7 +46,7 @@ const formFromItem = (item: PlannerItem): FormState => ({
   start_time: item.start_time || '09:00',
   end_time: item.end_time || '10:00',
   note: item.note || '',
-  upload: !item.local_only,
+  target,
 });
 
 const dateLabel = (ymd: string) => {
@@ -63,7 +65,14 @@ const MAX_SPAN_DAYS = 62;
 
 export default function PlannerPage() {
   const user = getUser()!;
-  const naverLinked = isNaverLinked(useNaverSyncState(), user.emp_uid);
+  const syncState = useNaverSyncState();
+  const naverLinked = isNaverLinked(syncState, user.emp_uid);
+  const calendars = naverLinked ? syncState.status?.calendars ?? [] : [];
+  /** 동기화된(또는 올릴) 캘린더 색 — 캘린더를 모르면 undefined */
+  const itemColor = (i: PlannerItem) =>
+    i.kind === 'event' && !i.local_only
+      ? calendarColor(calendars, i.calendar_url ?? calendarOf(calendars, i.external_id)?.url)
+      : undefined;
   const items = usePlannerItems(user.emp_uid);
   const today = toYmd(new Date());
 
@@ -130,12 +139,12 @@ export default function PlannerPage() {
 
   const openNew = (kind: PlannerKind, ymd?: string) => {
     setEditingId(null);
-    setForm(emptyForm(kind, ymd));
+    setForm(emptyForm(kind, ymd, getUploadTarget(calendars)));
   };
 
   const openEdit = (item: PlannerItem) => {
     setEditingId(item.id);
-    setForm(formFromItem(item));
+    setForm(formFromItem(item, uploadTargetOf(item, calendars)));
   };
 
   const editingItem = editingId ? items.find(i => i.id === editingId) : undefined;
@@ -167,9 +176,13 @@ export default function PlannerPage() {
       end_date: endDate,
       start_time: isTimed ? form.start_time : undefined,
       end_time: isTimed ? form.end_time : undefined,
-      local_only: isEvent && !form.upload ? true : undefined,
     };
-    if (isEvent && naverLinked && !readonly) setUploadDefault(form.upload);
+    // 연동돼 있을 때만 올릴 캘린더를 정한다 (연동 전 일정은 연동 후 기본 캘린더로 올라감)
+    if (isEvent && naverLinked && !readonly) {
+      draft.local_only = form.target ? undefined : true;
+      draft.calendar_url = form.target || undefined;
+      setUploadTarget(form.target);
+    }
     if (editingId) {
       updateItem(user.emp_uid, editingId, draft);
     } else {
@@ -210,14 +223,18 @@ export default function PlannerPage() {
           className="mt-0.5 w-4 h-4 rounded border-gray-300 text-blue-600 shrink-0 cursor-pointer"
         />
       ) : (
-        <span className="mt-1.5 w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
+        <span
+          className={`mt-1.5 w-2 h-2 rounded-full shrink-0 ${itemColor(item) ? '' : 'bg-indigo-400'}`}
+          style={itemColor(item) ? { backgroundColor: itemColor(item) } : undefined}
+        />
       )}
       <div className="min-w-0 flex-1">
         <div className={`text-sm font-medium truncate ${item.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>
           {item.external_id && (
             <span
               className="inline-block mr-1 px-1 rounded bg-green-500 text-white text-[9px] font-black align-middle"
-              title={item.readonly ? '네이버 반복 일정 (네이버에서 수정)' : '네이버 캘린더와 동기화됨'}
+              style={itemColor(item) ? { backgroundColor: itemColor(item) } : undefined}
+              title={`${calendarOf(calendars, item.external_id)?.name ?? '네이버 캘린더'}${item.readonly ? ' · 반복 일정 (네이버에서 수정)' : ''}`}
             >
               N
             </span>
@@ -302,9 +319,10 @@ export default function PlannerPage() {
                         key={i.id}
                         className={`text-[10px] leading-tight truncate rounded px-1 ${
                           i.kind === 'event'
-                            ? 'bg-indigo-50 text-indigo-600'
+                            ? (itemColor(i) ? '' : 'bg-indigo-50 text-indigo-600')
                             : i.done ? 'text-gray-300 line-through' : 'bg-amber-50 text-amber-700'
                         }`}
+                        style={itemColor(i) ? { backgroundColor: `${itemColor(i)}1f`, color: itemColor(i) } : undefined}
                       >
                         {i.kind === 'todo' ? (i.done ? '☑ ' : '☐ ') : i.start_time ? `${i.start_time} ` : ''}{i.title}
                       </div>
@@ -394,17 +412,26 @@ export default function PlannerPage() {
                   )}
                 </div>
                 {form.kind === 'event' && naverLinked && !readonly && (
-                  <label className="flex items-center gap-1.5 text-xs text-gray-600 cursor-pointer select-none">
-                    <input
-                      type="checkbox"
-                      checked={form.upload}
-                      onChange={e => setForm(f => f && { ...f, upload: e.target.checked })}
-                      className="w-3.5 h-3.5"
-                    />
-                    <span className="inline-block px-1 rounded bg-green-500 text-white text-[9px] font-black">N</span>
-                    네이버 캘린더에 올리기
-                    {editingItem?.external_id && !form.upload && <span className="text-orange-500">(네이버에서는 지워져요)</span>}
-                  </label>
+                  <div className="flex items-center gap-1.5 text-xs text-gray-600 flex-wrap">
+                    <span
+                      className="inline-block px-1 rounded bg-green-500 text-white text-[9px] font-black"
+                      style={form.target ? { backgroundColor: calendarColor(calendars, form.target) } : undefined}
+                    >
+                      N
+                    </span>
+                    <select
+                      value={form.target}
+                      onChange={e => setForm(f => f && { ...f, target: e.target.value })}
+                      className="border border-gray-200 rounded-lg px-2 py-1 text-xs bg-white"
+                    >
+                      <option value="">네이버에 올리지 않음 (이 PC에만)</option>
+                      {calendars.map(c => <option key={c.url} value={c.url}>{c.name}</option>)}
+                    </select>
+                    {editingItem?.external_id && !form.target && <span className="text-orange-500">네이버에서는 지워져요</span>}
+                    {editingItem?.external_id && form.target && form.target !== calendarOf(calendars, editingItem.external_id)?.url && (
+                      <span className="text-blue-500">이 캘린더로 옮겨져요</span>
+                    )}
+                  </div>
                 )}
                 {form.kind === 'event' && !form.allDay && (
                   <div className="flex items-center gap-1.5">

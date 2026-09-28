@@ -1,6 +1,6 @@
 import { useEffect, useState } from 'react';
 import { naverApi, naverAvailable, type NaverCalendar } from '../api/naverCalendar';
-import { detachNaverItems, refreshNaverStatus, syncNaver, useNaverSyncState } from '../stores/naverSync';
+import { calendarColor, detachCalendarItems, detachNaverItems, refreshNaverStatus, syncNaver, useNaverSyncState } from '../stores/naverSync';
 
 const ago = (iso: string | null) => {
   if (!iso) return '아직 안 함';
@@ -32,7 +32,12 @@ export default function NaverSyncBar({ empUid }: { empUid: number }) {
         </span>
         {linked ? (
           <>
-            <span className="text-gray-500 truncate max-w-[140px]" title={status?.calendarName || ''}>{status?.calendarName}</span>
+            <span className="inline-flex items-center gap-1 text-gray-500" title={status?.calendars.map(c => c.name).join(', ')}>
+              {status?.calendars.map(c => (
+                <span key={c.url} className="w-2 h-2 rounded-full" style={{ backgroundColor: calendarColor(status.calendars, c.url) }} />
+              ))}
+              {status && status.calendars.length === 1 ? status.calendars[0].name : `캘린더 ${status?.calendars.length}개`}
+            </span>
             <span className={lastError ? 'text-red-500' : 'text-gray-400'} title={lastError || ''}>
               {running ? '동기화 중…' : lastError ? '동기화 실패' : ago(lastSyncedAt)}
             </span>
@@ -64,7 +69,8 @@ function NaverSettingsModal({ empUid, onClose }: { empUid: number; onClose: () =
   const [username, setUsername] = useState(status?.username || '');
   const [password, setPassword] = useState('');
   const [calendars, setCalendars] = useState<NaverCalendar[] | null>(null);
-  const [selectedUrl, setSelectedUrl] = useState(status?.calendarUrl || '');
+  // 동기화할 캘린더들 (여러 개 선택)
+  const [selectedUrls, setSelectedUrls] = useState<string[]>(() => status?.calendars.map(c => c.url) ?? []);
   const [busy, setBusy] = useState(false);
   const [error, setError] = useState('');
   const [confirmDisconnect, setConfirmDisconnect] = useState(false);
@@ -84,7 +90,10 @@ function NaverSettingsModal({ empUid, onClose }: { empUid: number; onClose: () =
       const list = await naverApi.connect(username.trim(), password);
       setPassword('');
       setCalendars(list);
-      if (!list.some(c => c.url === selectedUrl)) setSelectedUrl(list[0]?.url || '');
+      setSelectedUrls(prev => {
+        const kept = prev.filter(u => list.some(c => c.url === u));
+        return kept.length ? kept : list.slice(0, 1).map(c => c.url);
+      });
       await refreshNaverStatus();
     });
   };
@@ -92,15 +101,20 @@ function NaverSettingsModal({ empUid, onClose }: { empUid: number; onClose: () =
   const handleLoadCalendars = () => run(async () => {
     const list = await naverApi.listCalendars();
     setCalendars(list);
-    if (!list.some(c => c.url === selectedUrl)) setSelectedUrl(list[0]?.url || '');
+    setSelectedUrls(prev => prev.filter(u => list.some(c => c.url === u)));
   });
 
+  const toggleCalendar = (url: string) =>
+    setSelectedUrls(prev => (prev.includes(url) ? prev.filter(u => u !== url) : [...prev, url]));
+
   const handleSave = () => run(async () => {
-    const cal = calendars?.find(c => c.url === selectedUrl);
-    if (!cal) throw new Error('동기화할 캘린더를 선택하세요.');
-    // 다른 캘린더(또는 다른 WTS 사용자)로 바꾸면 이전 캘린더에서 온 일정은 정리
-    if (status?.calendarUrl && (status.calendarUrl !== cal.url || status.empUid !== empUid)) detachNaverItems(empUid);
-    await naverApi.selectCalendar(cal.url, cal.name, empUid);
+    const chosen = (calendars ?? []).filter(c => selectedUrls.includes(c.url));
+    if (!chosen.length) throw new Error('동기화할 캘린더를 하나 이상 선택하세요.');
+    // 다른 WTS 사용자로 바뀌면 전부, 아니면 뺀 캘린더의 일정만 앱에서 정리 (네이버엔 그대로)
+    const prev = status?.calendars ?? [];
+    if (status?.empUid != null && status.empUid !== empUid) detachNaverItems(empUid);
+    else detachCalendarItems(empUid, prev.filter(p => !chosen.some(c => c.url === p.url)).map(p => p.url));
+    await naverApi.selectCalendars(chosen, empUid);
     await refreshNaverStatus();
     onClose();
     syncNaver(empUid).catch(() => {});
@@ -161,21 +175,27 @@ function NaverSettingsModal({ empUid, onClose }: { empUid: number; onClose: () =
         {/* 2. 캘린더 선택 */}
         {calendars && (
           <div className="space-y-2">
-            <div className="text-sm font-semibold text-gray-600">2. 동기화할 캘린더</div>
+            <div className="text-sm font-semibold text-gray-600">2. 동기화할 캘린더 <span className="font-normal text-xs text-gray-400">(여러 개 선택 가능)</span></div>
             {calendars.length === 0 ? (
               <p className="text-xs text-gray-400">일정을 담을 수 있는 캘린더가 없습니다.</p>
             ) : (
-              <div className="space-y-1 max-h-48 overflow-y-auto">
-                {calendars.map(c => (
-                  <label key={c.url} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer text-sm">
-                    <input type="radio" name="naver-cal" checked={selectedUrl === c.url} onChange={() => setSelectedUrl(c.url)} />
-                    {c.name}
-                  </label>
-                ))}
+              <div className="space-y-1 max-h-56 overflow-y-auto">
+                {calendars.map(c => {
+                  const chosen = calendars.filter(x => selectedUrls.includes(x.url));
+                  const color = calendarColor(chosen, c.url);
+                  return (
+                    <label key={c.url} className="flex items-center gap-2 px-3 py-2 rounded-lg border border-gray-100 hover:bg-gray-50 cursor-pointer text-sm">
+                      <input type="checkbox" checked={selectedUrls.includes(c.url)} onChange={() => toggleCalendar(c.url)} />
+                      <span className="w-2.5 h-2.5 rounded-full border border-gray-200" style={{ backgroundColor: color ?? 'transparent' }} />
+                      {c.name}
+                    </label>
+                  );
+                })}
               </div>
             )}
+            <p className="text-[11px] text-gray-400">선택을 해제한 캘린더의 일정은 앱에서만 사라지고 네이버에는 그대로 남아요.</p>
             <div className="flex justify-end">
-              <button onClick={handleSave} disabled={busy || !selectedUrl} className="px-4 py-1.5 text-xs bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 disabled:opacity-50">
+              <button onClick={handleSave} disabled={busy || selectedUrls.length === 0} className="px-4 py-1.5 text-xs bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600 disabled:opacity-50">
                 저장하고 동기화
               </button>
             </div>
@@ -187,7 +207,7 @@ function NaverSettingsModal({ empUid, onClose }: { empUid: number; onClose: () =
         {hasSavedLogin && (
           <div className="pt-3 border-t border-gray-100 flex items-center justify-between">
             <span className="text-xs text-gray-400">
-              {status?.connected ? `${status.username} · ${status.calendarName}` : `${status?.username} (캘린더 미선택)`}
+              {status?.connected ? `${status.username} · 캘린더 ${status.calendars.length}개` : `${status?.username} (캘린더 미선택)`}
             </span>
             {confirmDisconnect ? (
               <span className="flex items-center gap-1.5">
