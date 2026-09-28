@@ -123,6 +123,7 @@ export default function ResultPage() {
 
   useEffect(() => { fetchDayResults(); }, [fetchDayResults]);
 
+  // 방금 불러온 방법 목록을 반환 — 호출 직후엔 jobMethods state가 아직 갱신 전이라 이걸 써야 함
   const loadFormData = async () => {
     const [jobRes, typeRes, methodRes] = await Promise.allSettled([
       jobApi.list({ emp_uid: user.emp_uid }),
@@ -131,8 +132,16 @@ export default function ResultPage() {
     ]);
     if (jobRes.status === 'fulfilled') setJobs(jobRes.value.data.data || jobRes.value.data || []);
     if (typeRes.status === 'fulfilled') setJobTypes(typeRes.value.data.data || typeRes.value.data || []);
-    if (methodRes.status === 'fulfilled') setJobMethods(methodRes.value.data.data || methodRes.value.data || []);
+    let methods = jobMethods;
+    if (methodRes.status === 'fulfilled') {
+      methods = methodRes.value.data.data || methodRes.value.data || [];
+      setJobMethods(methods);
+    }
+    return methods;
   };
+
+  const outingUidOf = (methods: typeof jobMethods) =>
+    methods.find(m => m.JOB_METHOD === '외근')?.JOB_METHOD_UID;
 
   const calcEndTime = (start: string, hours: number) => {
     let sh: number, sm: number;
@@ -147,7 +156,8 @@ export default function ResultPage() {
   };
 
   const handleNew = async () => {
-    await loadFormData();
+    const methods = await loadFormData();
+    const normalMethodUid = methods.find(m => m.JOB_METHOD === '일반')?.JOB_METHOD_UID || 1;
     const defaultHours = 1;
     let startTime = '09:00';
     try {
@@ -155,7 +165,7 @@ export default function ResultPage() {
       if (res.data?.last_end_time) startTime = fmtTime(res.data.last_end_time);
     } catch { /* use default */ }
     setForm({
-      job_uid: 0, job_type_uid: 0, job_method_uid: 1,
+      job_uid: 0, job_type_uid: 0, job_method_uid: normalMethodUid,
       start_time: startTime, end_time: calcEndTime(startTime, defaultHours),
       hours: defaultHours, note: '', is_outing: false,
     });
@@ -165,8 +175,7 @@ export default function ResultPage() {
   };
 
   const handleEdit = async (item: ResultItem) => {
-    await loadFormData();
-    const outingMethodUid = jobMethods.find(m => m.JOB_METHOD === '외근')?.JOB_METHOD_UID;
+    const outingMethodUid = outingUidOf(await loadFormData());
     setForm({
       job_uid: item.JOB_UID,
       job_type_uid: item.JOB_TYPE_UID || 0,
@@ -183,14 +192,13 @@ export default function ResultPage() {
   };
 
   const handleCopyRecent = async (item: ResultItem) => {
-    await loadFormData();
+    const outingMethodUid = outingUidOf(await loadFormData());
     let startTime = '09:00';
     try {
       const res = await resultApi.lastEndTime(user.emp_uid, selectedDate);
       if (res.data?.last_end_time) startTime = fmtTime(res.data.last_end_time);
     } catch { /* use default */ }
     const duration = item.HOURS || 1;
-    const outingMethodUid = jobMethods.find(m => m.JOB_METHOD === '외근')?.JOB_METHOD_UID;
     setForm({
       job_uid: item.JOB_UID,
       job_type_uid: item.JOB_TYPE_UID || 0,
@@ -256,10 +264,13 @@ export default function ResultPage() {
       alert('업무와 업무유형을 선택해주세요.');
       return;
     }
-    // Determine method uid from is_outing checkbox
-    const outingMethod = jobMethods.find(m => m.JOB_METHOD === '외근');
-    const normalMethod = jobMethods.find(m => m.JOB_METHOD === '일반');
-    const methodUid = form.is_outing ? (outingMethod?.JOB_METHOD_UID || 2) : (normalMethod?.JOB_METHOD_UID || 1);
+    // 외근 체크를 바꾸지 않았으면 기존 방법 유지 (위젯에서 고른 다른 방법이 '일반'으로 덮이지 않도록)
+    const outingMethodUid = outingUidOf(jobMethods) || 2;
+    const normalMethodUid = jobMethods.find(m => m.JOB_METHOD === '일반')?.JOB_METHOD_UID || 1;
+    const wasOuting = form.job_method_uid === outingMethodUid;
+    const methodUid = form.is_outing === wasOuting
+      ? form.job_method_uid
+      : (form.is_outing ? outingMethodUid : normalMethodUid);
 
     // 서버는 "0900" 형식 기대
     const sendTime = (t: string) => t.replace(':', '');

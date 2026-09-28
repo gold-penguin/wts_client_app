@@ -123,18 +123,22 @@ export default function WeeklyPage() {
     setSaving(true);
     try {
       // 1단계: saveIndividual — 신규 행 INSERT + 기존 행의 thisweek_note UPDATE
+      const noteOf = (e: Entry) => {
+        const ed = editData[e.job_uid];
+        return { thisweek: ed?.thisweek ?? e.thisweek_note, nextweek: ed?.nextweek ?? e.nextweek_note };
+      };
       const saveEntries = entries
-        .map(e => {
-          const ed = editData[e.job_uid];
-          const thisweek = ed?.thisweek ?? e.thisweek_note;
-          return {
-            job_uid: e.job_uid,
-            wreport_charge_uid: e.wreport_charge_uid ?? undefined,
-            thisweek_note: thisweek,
-          };
+        // 금주·차주 모두 빈 신규 항목은 건드리지 않음 (기존 행은 비우는 동작도 허용)
+        // 차주 계획만 있어도 행을 만들어야 3단계에서 nextweek_note가 반영됨
+        .filter(e => {
+          const { thisweek, nextweek } = noteOf(e);
+          return e.wreport_charge_uid !== null || thisweek.trim().length > 0 || nextweek.trim().length > 0;
         })
-        // 빈 신규 항목은 건드리지 않음 (기존 행은 비우는 동작도 허용)
-        .filter(s => s.wreport_charge_uid !== undefined || s.thisweek_note.trim().length > 0);
+        .map(e => ({
+          job_uid: e.job_uid,
+          wreport_charge_uid: e.wreport_charge_uid ?? undefined,
+          thisweek_note: noteOf(e).thisweek,
+        }));
 
       if (saveEntries.length > 0) {
         await weeklyApi.saveIndividual({

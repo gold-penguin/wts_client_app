@@ -21,7 +21,38 @@ api.interceptors.request.use((config) => {
   return config;
 });
 
-let isRelogging = false;
+// Shared in-flight re-login so concurrent 401s wait for one login instead of logging out
+let reloginPromise: Promise<string> | null = null;
+
+function relogin(creds: { user_id: string; password: string }): Promise<string> {
+  if (!reloginPromise) {
+    reloginPromise = axios
+      .post(`${baseURL}/auth/login`, creds, { headers: { 'Content-Type': 'application/json' } })
+      .then((res) => {
+        setUser(res.data);
+        return res.data.token as string;
+      })
+      .finally(() => {
+        reloginPromise = null;
+      });
+  }
+  return reloginPromise;
+}
+
+function currentToken(): string | undefined {
+  const raw = localStorage.getItem('wts_user');
+  return raw ? JSON.parse(raw).token : undefined;
+}
+
+function redirectToLogin() {
+  clearUser();
+  // Widget window shows its own "login in main window" screen instead of the login page
+  if (window.location.hash.startsWith('#/widget')) {
+    window.dispatchEvent(new Event('auth-sync'));
+    return;
+  }
+  window.location.hash = '#/login';
+}
 
 api.interceptors.response.use(
   (res) => res,
@@ -34,30 +65,28 @@ api.interceptors.response.use(
       );
     }
 
-    if (err.response?.status === 401 && !err.config._retried) {
-      if (getAutoLogin() && !isRelogging) {
-        const creds = getStoredCredentials();
-        if (creds) {
-          isRelogging = true;
-          try {
-            const res = await axios.post(`${baseURL}/auth/login`, creds, {
-              headers: { 'Content-Type': 'application/json' },
-            });
-            setUser(res.data);
-            err.config._retried = true;
-            err.config.headers.Authorization = `Bearer ${res.data.token}`;
-            return api.request(err.config);
-          } catch {
-            clearUser();
-            window.location.hash = '#/login';
-          } finally {
-            isRelogging = false;
-          }
+    if (err.response?.status === 401 && err.config && !err.config._retried) {
+      err.config._retried = true;
+
+      // Token was already refreshed by another request (or window) after this one was sent
+      const token = currentToken();
+      if (token && err.config.headers.Authorization !== `Bearer ${token}`) {
+        err.config.headers.Authorization = `Bearer ${token}`;
+        return api.request(err.config);
+      }
+
+      const creds = getAutoLogin() ? getStoredCredentials() : null;
+      if (creds) {
+        try {
+          const newToken = await relogin(creds);
+          err.config.headers.Authorization = `Bearer ${newToken}`;
+          return api.request(err.config);
+        } catch {
+          redirectToLogin();
           return Promise.reject(err);
         }
       }
-      clearUser();
-      window.location.hash = '#/login';
+      redirectToLogin();
     }
     return Promise.reject(err);
   },
