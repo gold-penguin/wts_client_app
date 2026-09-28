@@ -7,6 +7,7 @@ const navItems = [
   { to: '/', label: '실적 입력', icon: '✏️' },
   { to: '/jobs', label: '업무 관리', icon: '📋' },
   { to: '/weekly', label: '주간 보고', icon: '📊' },
+  { to: '/planner', label: '내 일정', icon: '🗓️' },
   { to: '/customers', label: '고객사', icon: '🏢' },
   { to: '/team', label: '팀 현황', icon: '👥' },
 ];

@@ -8,6 +8,7 @@ import WeeklyPage from './pages/WeeklyPage';
 import CustomerPage from './pages/CustomerPage';
 import TeamPage from './pages/TeamPage';
 import AdminPage from './pages/AdminPage';
+import PlannerPage from './pages/PlannerPage';
 import WidgetPage from './pages/WidgetPage';
 
 function ProtectedRoute({ children }: { children: React.ReactNode }) {
@@ -34,6 +35,7 @@ export default function App() {
           <Route index element={<ResultPage />} />
           <Route path="jobs" element={<JobPage />} />
           <Route path="weekly" element={<WeeklyPage />} />
+          <Route path="planner" element={<PlannerPage />} />
           <Route path="customers" element={<CustomerPage />} />
           <Route path="team" element={<TeamPage />} />
           <Route path="admin" element={<AdminPage />} />

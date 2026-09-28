@@ -3,6 +3,8 @@ import { resultApi } from '../api/result';
 import { jobApi } from '../api/job';
 import { commonApi } from '../api/common';
 import { getUser } from '../stores/authStore';
+import { usePlannerItems, toYmd, isDueBy } from '../stores/plannerStore';
+import WidgetPlanner from '../components/WidgetPlanner';
 
 interface ResultItem {
   REPORT_UID: number;
@@ -47,6 +49,8 @@ export default function WidgetPage() {
   const [results, setResults] = useState<ResultItem[]>([]);
   const [totalHours, setTotalHours] = useState(0);
   const [loading, setLoading] = useState(true);
+  const [tab, setTab] = useState<'results' | 'planner'>('results');
+  const plannerItems = usePlannerItems(user?.emp_uid);
 
   // Quick form
   const [showForm, setShowForm] = useState(false);
@@ -274,6 +278,11 @@ export default function WidgetPage() {
     : jobs;
   const QUICK_HOURS = [1, 2, 4, 8];
 
+  const today = toYmd(new Date());
+  const plannerCount = plannerItems.filter(i =>
+    isDueBy(i, today) || (i.kind === 'todo' && !i.done && !i.date) || (i.kind === 'event' && i.date === today),
+  ).length;
+
   const TARGET_HOURS = 8;
   const progressPercent = Math.min((totalHours / TARGET_HOURS) * 100, 100);
 
@@ -308,7 +317,7 @@ export default function WidgetPage() {
             <span className="text-xs text-gray-400">{todayLabel()}</span>
           </div>
           <div className="flex items-center gap-1">
-            {!showForm && (
+            {tab === 'results' && !showForm && (
               <button
                 onClick={openForm}
                 className="widget-btn-action bg-blue-500 hover:bg-blue-600"
@@ -328,7 +337,17 @@ export default function WidgetPage() {
             </button>
           </div>
         </div>
+        {/* Tabs */}
+        <div className="flex gap-1 mb-2" style={{ WebkitAppRegion: 'no-drag' } as React.CSSProperties}>
+          <button onClick={() => setTab('results')} className={`widget-chip ${tab === 'results' ? 'widget-chip-active' : ''}`}>
+            실적 {totalHours}h
+          </button>
+          <button onClick={() => setTab('planner')} className={`widget-chip ${tab === 'planner' ? 'widget-chip-active' : ''}`}>
+            할 일{plannerCount > 0 ? ` ${plannerCount}` : ''}
+          </button>
+        </div>
         {/* Progress bar */}
+        {tab === 'results' && (
         <div className="flex items-center gap-2">
           <div className="flex-1 h-1.5 bg-gray-100 rounded-full overflow-hidden">
             <div
@@ -341,10 +360,11 @@ export default function WidgetPage() {
           </div>
           <span className={`text-xs font-bold tabular-nums ${progressPercent >= 100 ? 'text-green-500' : 'text-blue-600'}`}>{totalHours}h</span>
         </div>
+        )}
       </div>
 
       {/* Quick input form */}
-      {showForm && (
+      {tab === 'results' && showForm && (
         <div className="px-3 py-2.5 border-b border-blue-100 bg-blue-50/80">
           <div className="space-y-2">
             {editingUid && (
@@ -418,7 +438,9 @@ export default function WidgetPage() {
 
       {/* Results list */}
       <div className="widget-body">
-        {loading ? (
+        {tab === 'planner' ? (
+          <WidgetPlanner empUid={user.emp_uid} items={plannerItems} />
+        ) : loading ? (
           <div className="flex-1 flex items-center justify-center py-8">
             <div className="text-xs text-gray-400">로딩 중...</div>
           </div>
