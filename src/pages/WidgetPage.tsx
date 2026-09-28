@@ -3,7 +3,7 @@ import { resultApi } from '../api/result';
 import { jobApi } from '../api/job';
 import { commonApi } from '../api/common';
 import { getUser } from '../stores/authStore';
-import { usePlannerItems, toYmd, isDueBy } from '../stores/plannerStore';
+import { usePlannerItems, toYmd, isDueBy, occursOn } from '../stores/plannerStore';
 import WidgetPlanner from '../components/WidgetPlanner';
 
 interface ResultItem {
@@ -280,7 +280,7 @@ export default function WidgetPage() {
 
   const today = toYmd(new Date());
   const plannerCount = plannerItems.filter(i =>
-    isDueBy(i, today) || (i.kind === 'todo' && !i.done && !i.date) || (i.kind === 'event' && i.date === today),
+    isDueBy(i, today) || (i.kind === 'todo' && !i.done && !i.date) || (i.kind === 'event' && occursOn(i, today)),
   ).length;
 
   const TARGET_HOURS = 8;

@@ -2,6 +2,7 @@ const { app, BrowserWindow, Tray, Menu, globalShortcut, nativeImage, screen, ipc
 const path = require('path');
 const log = require('electron-log/main');
 const { autoUpdater } = require('electron-updater');
+const { registerNaverIpc } = require('./naverCalendar.cjs');
 
 // Log configuration
 log.initialize();
@@ -143,6 +144,9 @@ ipcMain.on('updater:install', () => {
 });
 ipcMain.handle('updater:get-status', () => updaterLastStatus);
 ipcMain.handle('app:get-version', () => app.getVersion());
+
+// IPC: Naver Calendar (CalDAV) for the personal planner
+registerNaverIpc(ipcMain);
 
 // ── Auto Updater ──
 let updaterManualCheck = false;

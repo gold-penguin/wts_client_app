@@ -1,5 +1,5 @@
 import { useState } from 'react';
-import { addItem, deleteItem, toggleDone, toYmd, fromYmd, byTime, isDueBy } from '../stores/plannerStore';
+import { addItem, deleteItem, toggleDone, toYmd, fromYmd, byTime, isDueBy, occursOn } from '../stores/plannerStore';
 import type { PlannerItem } from '../types/planner';
 
 interface Props {
@@ -17,7 +17,7 @@ export default function WidgetPlanner({ empUid, items }: Props) {
   const [title, setTitle] = useState('');
   const today = toYmd(new Date());
 
-  const events = items.filter(i => i.kind === 'event' && i.date === today).sort(byTime);
+  const events = items.filter(i => i.kind === 'event' && occursOn(i, today)).sort(byTime);
   const todos = items
     .filter(i => isDueBy(i, today) || (i.kind === 'todo' && !i.done && !i.date))
     .sort((a, b) => (a.date || '99999999').localeCompare(b.date || '99999999') || a.created_at.localeCompare(b.created_at));
@@ -54,13 +54,13 @@ export default function WidgetPlanner({ empUid, items }: Props) {
           <div className="text-[11px] text-red-400 leading-tight mt-0.5">{shortDate(item.date)} 마감</div>
         )}
       </div>
-      <button
+      {!item.readonly && <button
         onClick={() => deleteItem(empUid, item.id)}
         className="text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity p-0.5"
         title="삭제"
       >
         <svg className="w-3 h-3" fill="none" stroke="currentColor" viewBox="0 0 24 24"><path strokeLinecap="round" strokeLinejoin="round" strokeWidth={2} d="M6 18L18 6M6 6l12 12"/></svg>
-      </button>
+      </button>}
     </div>
   );
 

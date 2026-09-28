@@ -2,6 +2,7 @@ import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
 import { getUser, clearUser } from '../stores/authStore';
 import UpdateStatus from '../components/UpdateStatus';
+import { useNaverAutoSync } from '../stores/naverSync';
 
 const navItems = [
   { to: '/', label: '실적 입력', icon: '✏️' },
@@ -16,6 +17,7 @@ export default function MainLayout() {
   const user = getUser();
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
+  useNaverAutoSync(user?.emp_uid);
 
   const handleLogout = () => {
     clearUser();

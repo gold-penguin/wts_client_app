@@ -4,7 +4,8 @@ import {
   usePlannerItems, addItem, updateItem, deleteItem, toggleDone,
   toYmd, fromYmd, ymdToInput, inputToYmd, byTime, isDueBy,
 } from '../stores/plannerStore';
-import type { PlannerItem, PlannerKind, PlannerDraft } from '../types/planner';
+import NaverSyncBar from '../components/NaverSyncBar';
+import type { PlannerItem, PlannerKind, PlannerFields } from '../types/planner';
 
 const WEEKDAYS = ['일', '월', '화', '수', '목', '금', '토'];
 
@@ -12,6 +13,7 @@ interface FormState {
   kind: PlannerKind;
   title: string;
   date: string; // YYYY-MM-DD (input 값)
+  endDate: string; // 여러 날 일정의 마지막 날, 비우면 하루
   allDay: boolean;
   start_time: string;
   end_time: string;
@@ -22,6 +24,7 @@ const emptyForm = (kind: PlannerKind, ymd?: string): FormState => ({
   kind,
   title: '',
   date: ymdToInput(ymd),
+  endDate: '',
   allDay: true,
   start_time: '09:00',
   end_time: '10:00',
@@ -32,6 +35,7 @@ const formFromItem = (item: PlannerItem): FormState => ({
   kind: item.kind,
   title: item.title,
   date: ymdToInput(item.date),
+  endDate: ymdToInput(item.end_date),
   allDay: !item.start_time,
   start_time: item.start_time || '09:00',
   end_time: item.end_time || '10:00',
@@ -43,8 +47,14 @@ const dateLabel = (ymd: string) => {
   return `${d.getMonth() + 1}월 ${d.getDate()}일 (${WEEKDAYS[d.getDay()]})`;
 };
 
-const timeLabel = (item: PlannerItem) =>
-  item.start_time ? `${item.start_time}${item.end_time ? `~${item.end_time}` : ''}` : '종일';
+const shortYmd = (ymd: string) => `${Number(ymd.slice(4, 6))}/${Number(ymd.slice(6, 8))}`;
+
+const timeLabel = (item: PlannerItem) => {
+  const time = item.start_time ? `${item.start_time}${item.end_time ? `~${item.end_time}` : ''}` : '종일';
+  return item.end_date ? `${time} (~${shortYmd(item.end_date)})` : time;
+};
+
+const MAX_SPAN_DAYS = 62;
 
 export default function PlannerPage() {
   const user = getUser()!;
@@ -60,11 +70,22 @@ export default function PlannerPage() {
   // 날짜별 항목 (일정 + 마감일 있는 할 일)
   const byDate = useMemo(() => {
     const map = new Map<string, PlannerItem[]>();
+    const put = (ymd: string, i: PlannerItem) => {
+      const list = map.get(ymd) ?? [];
+      list.push(i);
+      map.set(ymd, list);
+    };
     for (const i of items) {
       if (!i.date) continue;
-      const list = map.get(i.date) ?? [];
-      list.push(i);
-      map.set(i.date, list);
+      put(i.date, i);
+      if (!i.end_date || i.end_date <= i.date) continue;
+      const d = fromYmd(i.date);
+      for (let n = 1; n <= MAX_SPAN_DAYS; n++) {
+        d.setDate(d.getDate() + 1);
+        const ymd = toYmd(d);
+        if (ymd > i.end_date) break;
+        put(ymd, i);
+      }
     }
     for (const list of map.values()) list.sort(byTime);
     return map;
@@ -111,6 +132,9 @@ export default function PlannerPage() {
     setForm(formFromItem(item));
   };
 
+  const editingItem = editingId ? items.find(i => i.id === editingId) : undefined;
+  const readonly = !!editingItem?.readonly;
+
   const closeForm = () => {
     setEditingId(null);
     setForm(null);
@@ -121,16 +145,20 @@ export default function PlannerPage() {
     const title = form.title.trim();
     if (!title) { alert('제목을 입력해주세요.'); return; }
     if (form.kind === 'event' && !form.date) { alert('일정 날짜를 선택해주세요.'); return; }
-    if (form.kind === 'event' && !form.allDay && form.end_time < form.start_time) {
+    const isEvent = form.kind === 'event';
+    if (isEvent && form.endDate && form.endDate < form.date) { alert('종료일이 시작일보다 빠릅니다.'); return; }
+    const endDate = isEvent && form.endDate && form.endDate > form.date ? inputToYmd(form.endDate) : undefined;
+    if (isEvent && !form.allDay && !endDate && form.end_time < form.start_time) {
       alert('종료 시간이 시작 시간보다 빠릅니다.');
       return;
     }
-    const isTimed = form.kind === 'event' && !form.allDay;
-    const draft: PlannerDraft = {
+    const isTimed = isEvent && !form.allDay;
+    const draft: PlannerFields = {
       kind: form.kind,
       title,
       note: form.note.trim() || undefined,
       date: form.date ? inputToYmd(form.date) : undefined,
+      end_date: endDate,
       start_time: isTimed ? form.start_time : undefined,
       end_time: isTimed ? form.end_time : undefined,
     };
@@ -177,28 +205,45 @@ export default function PlannerPage() {
         <span className="mt-1.5 w-2 h-2 rounded-full bg-indigo-400 shrink-0" />
       )}
       <div className="min-w-0 flex-1">
-        <div className={`text-sm font-medium truncate ${item.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>{item.title}</div>
+        <div className={`text-sm font-medium truncate ${item.done ? 'line-through text-gray-400' : 'text-gray-700'}`}>
+          {item.external_id && (
+            <span
+              className="inline-block mr-1 px-1 rounded bg-green-500 text-white text-[9px] font-black align-middle"
+              title={item.readonly ? '네이버 반복 일정 (네이버에서 수정)' : '네이버 캘린더와 동기화됨'}
+            >
+              N
+            </span>
+          )}
+          {item.title}
+        </div>
         <div className="text-xs text-gray-400">
           {opts?.showDate && item.date && <span className="text-red-400 mr-1.5">{dateLabel(item.date)}</span>}
           {item.kind === 'event' ? timeLabel(item) : item.date ? (opts?.showDate ? '마감' : '할 일') : ''}
         </div>
         {item.note && <div className="text-xs text-gray-500 mt-0.5 line-clamp-2 whitespace-pre-wrap">{item.note}</div>}
       </div>
-      <button
-        onClick={e => { e.stopPropagation(); handleDelete(item.id); }}
-        className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
-        title="삭제"
-      >
-        삭제
-      </button>
+      {!item.readonly && (
+        <button
+          onClick={e => { e.stopPropagation(); handleDelete(item.id); }}
+          className="text-xs text-gray-300 hover:text-red-500 opacity-0 group-hover:opacity-100 transition-opacity shrink-0"
+          title="삭제"
+        >
+          삭제
+        </button>
+      )}
     </div>
   );
 
   return (
     <div>
       <div className="flex flex-col sm:flex-row sm:items-end justify-between gap-1 mb-4 sm:mb-6">
-        <h2 className="text-lg sm:text-xl font-bold text-gray-700">🗓️ 내 일정</h2>
-        <p className="text-xs text-gray-400">WTS에 올라가지 않는 개인 할 일·일정입니다. 이 PC에만 저장돼요.</p>
+        <div>
+          <h2 className="text-lg sm:text-xl font-bold text-gray-700">🗓️ 내 일정</h2>
+          <p className="text-xs text-gray-400 mt-0.5">WTS에 올라가지 않는 개인 할 일·일정이에요. 일정은 네이버 캘린더와 동기화할 수 있어요.</p>
+        </div>
+        <div className="sm:text-right">
+          <NaverSyncBar empUid={user.emp_uid} />
+        </div>
       </div>
 
       <div className="flex flex-col lg:flex-row gap-4">
@@ -296,8 +341,11 @@ export default function PlannerPage() {
                       </button>
                     ))}
                   </div>
-                  <span className="text-xs font-semibold text-blue-600">{editingId ? '수정' : '새 항목'}</span>
+                  <span className="text-xs font-semibold text-blue-600">{readonly ? '보기' : editingId ? '수정' : '새 항목'}</span>
                 </div>
+                {readonly && (
+                  <p className="text-[11px] text-green-700 bg-green-50 rounded px-2 py-1">네이버 반복 일정이에요. 수정·삭제는 네이버 캘린더에서 해 주세요.</p>
+                )}
                 <input
                   type="text"
                   value={form.title}
@@ -316,6 +364,19 @@ export default function PlannerPage() {
                   />
                   {form.kind === 'todo' && form.date && (
                     <button onClick={() => setForm(f => f && { ...f, date: '' })} className="text-xs text-gray-400 hover:text-gray-600">마감일 없음</button>
+                  )}
+                  {form.kind === 'event' && (
+                    <>
+                      <span className="text-gray-400 text-sm">~</span>
+                      <input
+                        type="date"
+                        value={form.endDate}
+                        min={form.date}
+                        onChange={e => setForm(f => f && { ...f, endDate: e.target.value })}
+                        title="여러 날 일정이면 마지막 날 (비우면 하루)"
+                        className="border border-gray-200 rounded-lg px-2 py-1.5 text-sm bg-white"
+                      />
+                    </>
                   )}
                   {form.kind === 'event' && (
                     <label className="flex items-center gap-1 text-xs text-gray-600 cursor-pointer select-none">
@@ -339,12 +400,14 @@ export default function PlannerPage() {
                   className="w-full border border-gray-200 rounded-lg px-3 py-2 text-sm bg-white resize-y focus:outline-none focus:ring-2 focus:ring-blue-200"
                 />
                 <div className="flex justify-between">
-                  {editingId ? (
+                  {editingId && !readonly ? (
                     <button onClick={() => handleDelete(editingId)} className="text-xs text-red-400 hover:text-red-600">삭제</button>
                   ) : <span />}
                   <div className="flex gap-1.5">
                     <button onClick={closeForm} className="px-3 py-1.5 text-xs text-gray-500 hover:bg-white rounded-lg">취소</button>
-                    <button onClick={handleSave} className="px-4 py-1.5 text-xs bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600">{editingId ? '수정' : '저장'}</button>
+                    {!readonly && (
+                      <button onClick={handleSave} className="px-4 py-1.5 text-xs bg-blue-500 text-white rounded-lg font-medium hover:bg-blue-600">{editingId ? '수정' : '저장'}</button>
+                    )}
                   </div>
                 </div>
               </div>
