@@ -4,6 +4,18 @@ const log = require('electron-log/main');
 const { autoUpdater } = require('electron-updater');
 const { registerNaverIpc } = require('./naverCalendar.cjs');
 
+// Dev and installed builds must not share userData: Chromium locks the Local Storage DB, so whichever
+// starts second silently loses localStorage (login, planner). Must run before anything touches userData.
+if (!app.isPackaged) {
+  app.setPath('userData', `${app.getPath('userData')}-dev`);
+}
+
+// One instance per build; a second launch focuses the existing window instead
+const gotSingleInstanceLock = app.requestSingleInstanceLock();
+if (!gotSingleInstanceLock) {
+  app.quit();
+}
+
 // Log configuration
 log.initialize();
 log.transports.file.maxSize = 5 * 1024 * 1024; // 5MB
@@ -300,7 +312,16 @@ function createTray() {
   });
 }
 
+app.on('second-instance', () => {
+  if (mainWindow) {
+    if (mainWindow.isMinimized()) mainWindow.restore();
+    mainWindow.show();
+    mainWindow.focus();
+  }
+});
+
 app.whenReady().then(() => {
+  if (!gotSingleInstanceLock) return;
   log.info(`WTS App started (v${app.getVersion()})`);
   createWindow();
   createWidget();

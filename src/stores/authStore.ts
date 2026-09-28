@@ -49,9 +49,10 @@ export const isOfflineUser = (user: LoginResponse | null) => !!user && !user.tok
 
 /**
  * 서버 없이 시작할 프로필. 마지막 로그인 프로필이 없으면 이 PC에 '내 일정' 데이터가
- * 한 사람 것만 있을 때 그 사번으로 최소 프로필을 만든다. 오프라인에선 이 PC의 데이터만 보인다.
+ * 한 사람 것만 있을 때 그 사번으로, 그것도 없으면 fallbackEmpUid(네이버 연동에 저장된 사번)로
+ * 최소 프로필을 만든다. 오프라인에선 이 PC의 데이터만 보인다.
  */
-export function getOfflineProfile(): LoginResponse | null {
+export function getOfflineProfile(fallbackEmpUid?: number | null): LoginResponse | null {
   try {
     const raw = localStorage.getItem(LAST_PROFILE_KEY);
     if (raw) return { ...(JSON.parse(raw) as Omit<LoginResponse, 'token'>), token: '' };
@@ -61,8 +62,10 @@ export function getOfflineProfile(): LoginResponse | null {
     const m = /^wts_planner_(\d+)$/.exec(localStorage.key(i) || '');
     if (m) empUids.add(Number(m[1]));
   }
-  if (empUids.size !== 1) return null;
-  const [emp_uid] = [...empUids];
+  let emp_uid: number;
+  if (empUids.size === 1) [emp_uid] = [...empUids];
+  else if (empUids.size === 0 && fallbackEmpUid) emp_uid = fallbackEmpUid;
+  else return null;
   return { token: '', emp_uid, user_name: '오프라인 사용자', grade: null, dept_uid: 0, dept_name: '', work_level: 0, level_name: '' };
 }
 

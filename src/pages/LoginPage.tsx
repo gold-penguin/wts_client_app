@@ -1,9 +1,10 @@
-import { useState } from 'react';
+import { useEffect, useState } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
 import { getAutoLogin, setAutoLogin, getOfflineProfile, setUser } from '../stores/authStore';
 import { isConnectionError } from '../api/client';
 import { useConnection } from '../stores/connectionStore';
+import { naverApi, naverAvailable } from '../api/naverCalendar';
 
 export default function LoginPage() {
   const [userId, setUserId] = useState('');
@@ -15,7 +16,13 @@ export default function LoginPage() {
   const navigate = useNavigate();
   const { serverDown } = useConnection();
   const [connFailed, setConnFailed] = useState(false);
-  const offlineProfile = (serverDown || connFailed) ? getOfflineProfile() : null;
+  // 네이버 연동 설정(메인 프로세스 파일)에 저장된 사번 — 이 창의 저장소가 비어 있어도 오프라인 시작 가능
+  const [naverEmpUid, setNaverEmpUid] = useState<number | null>(null);
+  useEffect(() => {
+    if (!naverAvailable()) return;
+    naverApi.status().then(s => setNaverEmpUid(s.empUid)).catch(() => {});
+  }, []);
+  const offlineProfile = (serverDown || connFailed) ? getOfflineProfile(naverEmpUid) : null;
 
   // 서버 없이 이 PC의 데이터('내 일정')만 쓰도록 시작. 서버가 돌아오면 첫 요청에서 다시 로그인 화면으로 안내된다.
   const startOffline = () => {
