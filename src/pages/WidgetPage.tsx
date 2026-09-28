@@ -5,6 +5,7 @@ import { commonApi } from '../api/common';
 import { getUser } from '../stores/authStore';
 import { usePlannerItems, toYmd, isDueBy, occursOn } from '../stores/plannerStore';
 import WidgetPlanner from '../components/WidgetPlanner';
+import { markRetrying, useConnection } from '../stores/connectionStore';
 
 interface ResultItem {
   REPORT_UID: number;
@@ -50,6 +51,7 @@ export default function WidgetPage() {
   const [totalHours, setTotalHours] = useState(0);
   const [loading, setLoading] = useState(true);
   const [tab, setTab] = useState<'results' | 'planner'>('results');
+  const { serverDown, retrying } = useConnection();
   const plannerItems = usePlannerItems(user?.emp_uid);
 
   // Quick form
@@ -362,6 +364,19 @@ export default function WidgetPage() {
         </div>
         )}
       </div>
+
+      {serverDown && (
+        <div className="px-3 py-1.5 bg-red-50 border-b border-red-100 flex items-center justify-between gap-2">
+          <span className="text-[11px] text-red-600">WTS 서버에 연결할 수 없습니다</span>
+          <button
+            onClick={() => { markRetrying(); fetchResults(); }}
+            disabled={retrying}
+            className="text-[11px] font-semibold text-red-600 hover:underline disabled:opacity-60 shrink-0"
+          >
+            {retrying ? '확인 중…' : '다시 시도'}
+          </button>
+        </div>
+      )}
 
       {/* Quick input form */}
       {tab === 'results' && showForm && (

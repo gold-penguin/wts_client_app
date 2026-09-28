@@ -1,14 +1,26 @@
 import axios from 'axios';
 import { getAutoLogin, getStoredCredentials, setUser, clearUser } from '../stores/authStore';
+import { setServerDown } from '../stores/connectionStore';
 
 const isDev = window.location.protocol === 'http:' || window.location.protocol === 'https:';
 
 const baseURL = isDev ? '/api' : 'http://idc.mocomsys.com:9080/api';
 
+// Without a timeout an unreachable server keeps pages "loading" until the OS gives up (~20s)
+const TIMEOUT_MS = 10_000;
+
 const api = axios.create({
   baseURL,
+  timeout: TIMEOUT_MS,
   headers: { 'Content-Type': 'application/json' },
 });
+
+/** No response, timeout, or gateway error (dev proxy returns 502 when the server is unreachable) */
+export function isConnectionError(err: unknown): boolean {
+  if (!axios.isAxiosError(err)) return false;
+  if (!err.response) return true;
+  return [502, 503, 504].includes(err.response.status);
+}
 
 api.interceptors.request.use((config) => {
   const raw = localStorage.getItem('wts_user');
@@ -27,7 +39,7 @@ let reloginPromise: Promise<string> | null = null;
 function relogin(creds: { user_id: string; password: string }): Promise<string> {
   if (!reloginPromise) {
     reloginPromise = axios
-      .post(`${baseURL}/auth/login`, creds, { headers: { 'Content-Type': 'application/json' } })
+      .post(`${baseURL}/auth/login`, creds, { timeout: TIMEOUT_MS, headers: { 'Content-Type': 'application/json' } })
       .then((res) => {
         setUser(res.data);
         return res.data.token as string;
@@ -55,8 +67,14 @@ function redirectToLogin() {
 }
 
 api.interceptors.response.use(
-  (res) => res,
+  (res) => {
+    setServerDown(false);
+    return res;
+  },
   async (err) => {
+    const connectionError = isConnectionError(err);
+    setServerDown(connectionError);
+
     const electron = (window as unknown as { wtsElectron?: { log?: { error: (...args: unknown[]) => void } } }).wtsElectron;
     if (electron?.log) {
       electron.log.error(
@@ -81,7 +99,12 @@ api.interceptors.response.use(
           const newToken = await relogin(creds);
           err.config.headers.Authorization = `Bearer ${newToken}`;
           return api.request(err.config);
-        } catch {
+        } catch (loginErr) {
+          // Server unreachable during re-login: keep the session and let the banner explain
+          if (isConnectionError(loginErr)) {
+            setServerDown(true);
+            return Promise.reject(loginErr);
+          }
           redirectToLogin();
           return Promise.reject(err);
         }

@@ -1,7 +1,7 @@
 import { useState, useCallback } from 'react';
 import { useNavigate } from 'react-router-dom';
 import { authApi } from '../api/auth';
-import { getUser, setUser, clearUser } from '../stores/authStore';
+import { getUser, setUser, logout as clearSession } from '../stores/authStore';
 import type { LoginResponse } from '../types/auth';
 
 export function useAuth() {
@@ -16,7 +16,7 @@ export function useAuth() {
   }, [navigate]);
 
   const logout = useCallback(() => {
-    clearUser();
+    clearSession();
     setUserState(null);
     navigate('/login');
   }, [navigate]);

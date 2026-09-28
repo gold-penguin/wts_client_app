@@ -1,8 +1,10 @@
 import { useState } from 'react';
 import { Outlet, NavLink, useNavigate } from 'react-router-dom';
-import { getUser, clearUser } from '../stores/authStore';
+import { getUser, logout, isOfflineUser } from '../stores/authStore';
 import UpdateStatus from '../components/UpdateStatus';
+import { commonApi } from '../api/common';
 import { useNaverAutoSync } from '../stores/naverSync';
+import { markRetrying, useConnection } from '../stores/connectionStore';
 
 const navItems = [
   { to: '/', label: '실적 입력', icon: '✏️' },
@@ -18,9 +20,19 @@ export default function MainLayout() {
   const navigate = useNavigate();
   const [menuOpen, setMenuOpen] = useState(false);
   useNaverAutoSync(user?.emp_uid);
+  const { serverDown, retrying } = useConnection();
+  // '다시 시도' 시 현재 페이지를 다시 마운트해 데이터를 새로 불러온다
+  const [reloadKey, setReloadKey] = useState(0);
+
+  const handleRetry = () => {
+    markRetrying();
+    setReloadKey(k => k + 1);
+    // API를 쓰지 않는 화면(내 일정 등)에서도 연결 여부가 판정되도록 가벼운 요청 하나
+    commonApi.jobMethods().catch(() => { /* 결과는 인터셉터가 연결 상태에 반영 */ });
+  };
 
   const handleLogout = () => {
-    clearUser();
+    logout();
     navigate('/login');
   };
 
@@ -72,6 +84,7 @@ export default function MainLayout() {
               <>
                 <span className="text-xs sm:text-sm text-gray-400 hidden sm:inline truncate max-w-[180px]">
                   {user.dept_name} {user.user_name}{user.grade ? ` ${user.grade}` : ''}
+                  {isOfflineUser(user) && <span className="ml-1 text-xs text-orange-500">(오프라인)</span>}
                 </span>
                 <span className="text-xs text-gray-400 sm:hidden truncate max-w-[100px]">
                   {user.user_name}
@@ -110,8 +123,24 @@ export default function MainLayout() {
         )}
       </header>
 
+      {serverDown && (
+        <div className="bg-red-50 border-b border-red-100 px-3 sm:px-4 py-2 flex items-center justify-between gap-3">
+          <p className="text-xs sm:text-sm text-red-600">
+            <span className="font-semibold">WTS 서버에 연결할 수 없습니다.</span>
+            <span className="text-red-500"> 네트워크나 서버 상태를 확인해 주세요. '내 일정'은 계속 쓸 수 있어요.</span>
+          </p>
+          <button
+            onClick={handleRetry}
+            disabled={retrying}
+            className="shrink-0 px-3 py-1 text-xs sm:text-sm bg-white border border-red-200 text-red-600 rounded-lg font-medium hover:bg-red-100 disabled:opacity-60 transition-colors"
+          >
+            {retrying ? '확인 중…' : '다시 시도'}
+          </button>
+        </div>
+      )}
+
       <main className="flex-1 w-full px-3 sm:px-4 lg:px-6 py-4 sm:py-6">
-        <Outlet />
+        <Outlet key={reloadKey} />
       </main>
     </div>
   );

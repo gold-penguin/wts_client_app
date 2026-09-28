@@ -1,6 +1,9 @@
 import { useState } from 'react';
+import { useNavigate } from 'react-router-dom';
 import { useAuth } from '../hooks/useAuth';
-import { getAutoLogin, setAutoLogin } from '../stores/authStore';
+import { getAutoLogin, setAutoLogin, getOfflineProfile, setUser } from '../stores/authStore';
+import { isConnectionError } from '../api/client';
+import { useConnection } from '../stores/connectionStore';
 
 export default function LoginPage() {
   const [userId, setUserId] = useState('');
@@ -9,6 +12,17 @@ export default function LoginPage() {
   const [error, setError] = useState('');
   const [loading, setLoading] = useState(false);
   const { login } = useAuth();
+  const navigate = useNavigate();
+  const { serverDown } = useConnection();
+  const [connFailed, setConnFailed] = useState(false);
+  const offlineProfile = (serverDown || connFailed) ? getOfflineProfile() : null;
+
+  // 서버 없이 이 PC의 데이터('내 일정')만 쓰도록 시작. 서버가 돌아오면 첫 요청에서 다시 로그인 화면으로 안내된다.
+  const startOffline = () => {
+    if (!offlineProfile) return;
+    setUser(offlineProfile);
+    navigate('/planner');
+  };
 
   const handleSubmit = async (e: React.FormEvent) => {
     e.preventDefault();
@@ -21,8 +35,11 @@ export default function LoginPage() {
         setAutoLogin(false);
       }
       await login(userId, password);
-    } catch {
-      setError('아이디 또는 비밀번호가 올바르지 않습니다.');
+    } catch (err) {
+      setConnFailed(isConnectionError(err));
+      setError(isConnectionError(err)
+        ? 'WTS 서버에 연결할 수 없습니다. 네트워크나 서버 상태를 확인해 주세요.'
+        : '아이디 또는 비밀번호가 올바르지 않습니다.');
     } finally {
       setLoading(false);
     }
@@ -91,6 +108,22 @@ export default function LoginPage() {
               {loading ? '로그인 중...' : '로그인'}
             </button>
           </form>
+
+          {offlineProfile && (
+            <div className="mt-4 pt-4 border-t border-gray-100 text-center space-y-2">
+              <button
+                type="button"
+                onClick={startOffline}
+                className="w-full py-2.5 px-4 border border-orange-200 text-orange-600 bg-orange-50 rounded-lg font-medium hover:bg-orange-100 transition-colors"
+              >
+                오프라인으로 시작
+              </button>
+              <p className="text-xs text-gray-400">
+                서버 없이 이 PC에 저장된 '내 일정'을 쓸 수 있어요.
+                {offlineProfile.user_name && offlineProfile.dept_name && ` (${offlineProfile.dept_name} ${offlineProfile.user_name})`}
+              </p>
+            </div>
+          )}
         </div>
       </div>
     </div>
